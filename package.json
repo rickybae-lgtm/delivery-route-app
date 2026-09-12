@@ -1,0 +1,6 @@
+{
+  "name": "delivery-route-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "주소만 입력하면 자동으로 좌표를 찾고, 실제 도로 주행거리 기준으로 오늘의 배송 순서를 계산해주는 개인용 배송 경로 앱"
+}
