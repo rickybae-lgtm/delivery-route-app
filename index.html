@@ -158,7 +158,9 @@
     <div class="btn-row">
       <button class="btn-primary" id="nextStopBtn" type="button">▶ 다음 배달처 티맵으로 열기</button>
       <button class="btn-ghost btn-sm" id="resetDoneBtn" type="button">완료 표시 초기화</button>
+      <button class="btn-ghost btn-sm" id="reoptBtn" type="button">🔄 전체 다시 최적화</button>
     </div>
+    <div class="hint">화살표(↑↓)나 "맨뒤로"로 옮긴 곳들은 그 위치에 그대로 고정되고(여러 곳을 옮기면 옮긴 곳 전부 고정), 나머지 배달처들은 고정된 지점들 사이사이에서 실제 도로거리 기준으로 자동 재배치돼요. 처음부터 완전히 새로 최적화하고 싶으면 "전체 다시 최적화"를 눌러주세요(고정도 다 풀립니다).</div>
     <div class="route-list" id="routeList"></div>
     <hr class="divider">
     <div class="hint">티맵 앱은 경유지를 최대 5곳까지 받을 수 있어, 구간을 나눠 열어드립니다.</div>
@@ -305,11 +307,95 @@
   }
 
   // ---------- routing (real road distance) ----------
-  function fetchRealRoute(start, stops){
+  function fetchRealRoute(start, stops, fixedOrder){
     return fetch('/api/route', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ start: { lat:start.lat, lng:start.lng }, stops: stops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }) })
+      body: JSON.stringify({
+        start: { lat:start.lat, lng:start.lng },
+        stops: stops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }),
+        fixedOrder: !!fixedOrder
+      })
     }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); });
+  }
+
+  // 사용자가 순서를 수동으로 바꾼 뒤, 그 순서 그대로 실제 거리/시간을 다시 계산.
+  // (좌표 없는 곳은 그 자리 그대로 유지하고, 좌표 있는 곳들만 재계산 대상에 포함)
+  function recalcLegsForCurrentOrder(){
+    if (!state.order) return;
+    var start = state.order.start;
+    var seq = state.order.seq;
+    var withCoords = seq.filter(hasCoords);
+    if (!withCoords.length){ renderRoute(); return; }
+    fetchRealRoute(start, withCoords, true).then(function(res){
+      if (res.ok && res.data && res.data.legs){
+        // withCoords 순서 그대로 legs가 오므로, seq 안에서 좌표있는 위치에만 순서대로 채워넣는다.
+        var li = 0;
+        var mergedLegs = seq.map(function(loc){
+          if (!hasCoords(loc)) return null;
+          return res.data.legs[li++] || null;
+        });
+        state.order.legs = mergedLegs;
+        state.order.totalDistanceM = res.data.totalDistanceM;
+        state.order.totalDurationS = res.data.totalDurationS;
+      }
+      renderRoute();
+    }).catch(function(){ renderRoute(); });
+  }
+
+  // 사용자가 지금까지 손으로 옮긴 배달처들(state.order.pinnedIds)은 전부 그 위치에 고정하고,
+  // 그 사이/앞뒤에 남은 배달처들만 그 상황(출발지→pin1→pin2→...→복귀)에 맞춰
+  // 실제 도로거리 기준으로 다시 최적화합니다. (B, C를 둘 다 옮겼으면 둘 다 고정된 채 나머지가 유동)
+  function reoptimizeAroundAllPinned(){
+    if (!state.order) return;
+    var start = state.order.start;
+    var seq = state.order.seq;
+    var pinnedIds = state.order.pinnedIds || [];
+    var pinnedSet = {};
+    pinnedIds.forEach(function(id){ pinnedSet[id] = true; });
+
+    var noCoordAll = seq.filter(function(l){ return !hasCoords(l); });
+    var coordSeq = seq.filter(hasCoords);
+    var pinnedStops = coordSeq.filter(function(l){ return pinnedSet[l.id]; });
+
+    if (!pinnedStops.length){ recalcLegsForCurrentOrder(); return; }
+
+    var segments = [];
+    var cur = [];
+    coordSeq.forEach(function(loc){
+      if (pinnedSet[loc.id]){ segments.push(cur); cur = []; }
+      else { cur.push(loc); }
+    });
+    segments.push(cur);
+
+    toast('고정된 ' + pinnedStops.length + '곳을 유지하고 나머지 순서를 다시 최적화하는 중...');
+
+    fetch('/api/route', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'pinnedMulti',
+        start: { lat:start.lat, lng:start.lng },
+        pinned: pinnedStops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }),
+        segments: segments.map(function(seg){ return seg.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }); }),
+        returnToStart: true
+      })
+    }).then(function(r){ return r.json().then(function(d){ return { ok:r.ok, data:d }; }); })
+      .then(function(res){
+        if (!res.ok || !res.data || !res.data.segmentsOrder){
+          toast('재최적화에 실패했어요. 순서는 유지하고 거리만 계산할게요.');
+          recalcLegsForCurrentOrder();
+          return;
+        }
+        var seqOut = [];
+        res.data.segmentsOrder.forEach(function(segOrder, i){
+          segOrder.forEach(function(s){ seqOut.push(locById(s._ref) || s); });
+          if (i < pinnedStops.length) seqOut.push(pinnedStops[i]);
+        });
+        state.order.seq = seqOut.concat(noCoordAll);
+        state.order.legs = res.data.legs;
+        state.order.totalDistanceM = res.data.totalDistanceM;
+        state.order.totalDurationS = res.data.totalDurationS;
+        renderRoute();
+      }).catch(function(){ toast('재최적화 중 오류가 발생했어요.'); recalcLegsForCurrentOrder(); });
   }
 
   // ---------- rendering ----------
@@ -357,16 +443,22 @@
     wrap.querySelectorAll('input[data-sel-id]').forEach(function(c){ c.addEventListener('change', function(){ if (this.checked) state.selected[this.dataset.selId]=true; else delete state.selected[this.dataset.selId]; updatePickerCount(); }); });
   }
 
+  function pinStop(loc){
+    if (!state.order.pinnedIds) state.order.pinnedIds = [];
+    if (state.order.pinnedIds.indexOf(loc.id) === -1) state.order.pinnedIds.push(loc.id);
+  }
   function moveStop(idx, delta){
     var seq = state.order.seq, j = idx+delta;
     if (j<0 || j>=seq.length) return;
+    var moving = seq[idx];
     var tmp = seq[idx]; seq[idx]=seq[j]; seq[j]=tmp;
-    renderRoute();
+    if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { recalcLegsForCurrentOrder(); }
   }
   function moveStopToEnd(idx){
     var seq = state.order.seq;
+    var moving = seq[idx];
     seq.push(seq.splice(idx,1)[0]);
-    renderRoute();
+    if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { recalcLegsForCurrentOrder(); }
   }
 
   function estimateSchedule(departMin, seq, legs){
@@ -627,7 +719,7 @@
   document.getElementById('clearPickBtn').addEventListener('click', function(){ state.selected={}; renderPicker(); updatePickerCount(); });
   document.getElementById('departTime').addEventListener('change', function(){ if (state.order) renderRoute(); });
 
-  document.getElementById('calcBtn').addEventListener('click', function(){
+  function runCalc(btn){
     var startLoc = state.startId ? locById(state.startId) : null;
     var stops = Object.keys(state.selected).map(locById).filter(Boolean);
     if (!startLoc){ toast('출발지를 선택해주세요 (라디오 버튼).'); return; }
@@ -637,7 +729,7 @@
     var withoutCoords = stops.filter(function(s){ return !hasCoords(s); });
     if (!withCoords.length){ toast('좌표가 있는 배달처를 1곳 이상 선택해주세요.'); return; }
 
-    var btn = this; var orig = btn.textContent;
+    var orig = btn.textContent;
     btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 실제 도로거리로 계산 중...';
 
     fetchRealRoute(startLoc, withCoords).then(function(res){
@@ -645,14 +737,21 @@
         toast('경로 계산에 실패했어요 (' + (res.data && res.data.error || '') + '). 잠시 후 다시 시도해주세요.');
         return;
       }
+      var completed = (state.order && state.order.completed) || {};
       var seq = res.data.order.map(function(s){ return locById(s._ref) || s; }).concat(withoutCoords);
-      state.order = { start: startLoc, seq: seq, legs: res.data.legs, totalDistanceM: res.data.totalDistanceM, totalDurationS: res.data.totalDurationS };
+      state.order = { start: startLoc, seq: seq, legs: res.data.legs, totalDistanceM: res.data.totalDistanceM, totalDurationS: res.data.totalDurationS, completed: completed, pinnedIds: [] };
       renderRoute();
       document.getElementById('routeCard').scrollIntoView({ behavior:'smooth', block:'start' });
       if (withoutCoords.length) toast('좌표 없는 ' + withoutCoords.length + '곳은 목록 맨 뒤에 순서 미정으로 추가했어요.');
     }).catch(function(){
       toast('경로 계산 중 오류가 발생했어요. 네트워크 상태를 확인해주세요.');
     }).then(function(){ btn.disabled=false; btn.textContent=orig; });
+  }
+
+  document.getElementById('calcBtn').addEventListener('click', function(){ runCalc(this); });
+  document.getElementById('reoptBtn').addEventListener('click', function(){
+    toast('전체를 다시 최적화합니다 (직접 조정한 순서는 초기화돼요).');
+    runCalc(document.getElementById('reoptBtn'));
   });
 
   function goToNextStop(){
