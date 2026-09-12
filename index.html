@@ -193,6 +193,10 @@
         <label class="field" style="grid-column:1/-1;"><span class="lbl">보관 구분 (직접 입력)</span><input type="text" id="f_categoryCustom" placeholder="예: 상온·습기주의, 위험물 등"></label>
       </div>
       <label class="field" style="margin-top:10px;"><span class="lbl">주소 *</span><input type="text" id="f_address" placeholder="지번 또는 도로명 주소" required></label>
+      <div class="btn-row" style="margin-top:8px;">
+        <button type="button" class="btn-ghost btn-sm" id="curLocBtn">📍 현재 위치 사용 (GPS)</button>
+      </div>
+      <div class="hint" style="margin-top:4px;">지금 서 계신 곳을 등록할 때 주소를 몰라도 이 버튼으로 좌표와 주소를 자동으로 채울 수 있어요. (스마트폰 위치 권한 허용 필요)</div>
       <details style="margin-top:8px;">
         <summary style="cursor:pointer; font-size:12.5px; color:var(--ink-soft);">좌표 직접 입력 / 확인 (평소엔 안 열어보셔도 됩니다)</summary>
         <div class="row2" style="margin-top:8px;">
@@ -640,6 +644,32 @@
   toggleCustomCatWrap();
 
   document.getElementById('cancelEditBtn').addEventListener('click', resetForm);
+
+  document.getElementById('curLocBtn').addEventListener('click', function(){
+    if (!navigator.geolocation){ toast('이 브라우저에서는 위치 가져오기가 지원되지 않아요.'); return; }
+    var btn = this; var orig = btn.textContent;
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 위치 확인 중...';
+    navigator.geolocation.getCurrentPosition(function(pos){
+      var lat = pos.coords.latitude, lng = pos.coords.longitude;
+      document.getElementById('f_lat').value = lat;
+      document.getElementById('f_lng').value = lng;
+      fetch('/api/reverse-geocode?lat=' + lat + '&lng=' + lng)
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d && d.address){
+            document.getElementById('f_address').value = d.address;
+            toast('현재 위치를 가져왔어요: ' + d.address);
+          } else {
+            toast('좌표는 가져왔지만 주소 변환에는 실패했어요. 주소를 직접 입력해주세요.');
+          }
+        })
+        .catch(function(){ toast('좌표는 가져왔지만 주소 변환 중 오류가 발생했어요. 주소를 직접 입력해주세요.'); })
+        .then(function(){ btn.disabled=false; btn.textContent=orig; });
+    }, function(err){
+      toast('위치를 가져오지 못했어요. 위치 권한을 허용했는지 확인해주세요.');
+      btn.disabled=false; btn.textContent=orig;
+    }, { enableHighAccuracy: true, timeout: 10000 });
+  });
 
   document.getElementById('regeoBtn').addEventListener('click', function(){
     var q = document.getElementById('f_address').value.trim() || document.getElementById('f_name').value.trim();
