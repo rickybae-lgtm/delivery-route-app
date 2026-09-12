@@ -3,9 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>오늘의 배송 루트</title>
+<title>경성 티에프</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     --bg:#F5F2EA; --surface:#FFFFFF; --surface-2:#ECE6D6; --ink:#1B211D; --ink-soft:#63695F;
@@ -129,13 +131,19 @@
   @keyframes spin{ to{ transform:rotate(360deg); } }
   .divider{ height:1px; background:var(--line); border:0; margin:2px 0; }
   @media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
+  #mapModal{ position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.5); display:none; align-items:stretch; justify-content:center; }
+  #mapPanel{ background:var(--surface); width:100%; max-width:720px; margin:auto; display:flex; flex-direction:column; height:min(90vh,760px); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); }
+  #mapPanelHead{ display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--line); }
+  #mapEl{ flex:1 1 auto; width:100%; }
+  .map-pin-num{ background:var(--accent); color:#fff; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35); }
+  .map-pin-start{ font-size:22px; line-height:1; }
 </style>
 </head>
 <body>
 
 <div class="wrap">
   <header class="app-header">
-    <h1>오늘의 배송 루트</h1>
+    <h1>경성 티에프</h1>
     <span class="date" id="todayDate"></span>
   </header>
   <p class="lede">이름과 주소만 입력하면 자동으로 좌표를 찾고, 실제 도로 주행거리 기준으로 오늘의 방문 순서를 계산합니다. 데이터는 이 기기(브라우저)에만 저장됩니다.</p>
@@ -159,6 +167,7 @@
       <button class="btn-primary" id="nextStopBtn" type="button">▶ 다음 배달처 티맵으로 열기</button>
       <button class="btn-ghost btn-sm" id="resetDoneBtn" type="button">완료 표시 초기화</button>
       <button class="btn-ghost btn-sm" id="reoptBtn" type="button">🔄 전체 다시 최적화</button>
+      <button class="btn-ghost btn-sm" id="showMapBtn" type="button">🗺️ 지도로 보기</button>
     </div>
     <div class="hint">화살표(↑↓)나 "맨뒤로"로 옮긴 곳들은 그 위치에 그대로 고정되고(여러 곳을 옮기면 옮긴 곳 전부 고정), 나머지 배달처들은 고정된 지점들 사이사이에서 실제 도로거리 기준으로 자동 재배치돼요. 처음부터 완전히 새로 최적화하고 싶으면 "전체 다시 최적화"를 눌러주세요(고정도 다 풀립니다).</div>
     <div class="route-list" id="routeList"></div>
@@ -171,12 +180,12 @@
   </section>
 
   <section class="card">
-    <h2><span class="step-no">3</span>배달처 등록 / 수정</h2>
+    <h2><span class="step-no">3</span>업체등록 / 수정</h2>
     <div class="hint">이름과 주소만 입력하고 저장하면 자동으로 좌표를 찾아 저장합니다. 자동으로 못 찾으면 알려드리니 그때만 수동으로 넣으시면 됩니다.</div>
     <form id="locForm">
       <input type="hidden" id="editId">
       <div class="row2">
-        <label class="field"><span class="lbl">배달처 이름 *</span><input type="text" id="f_name" placeholder="예: 상록회관, 미소식당" required></label>
+        <label class="field"><span class="lbl">상호명 *</span><input type="text" id="f_name" placeholder="예: 상록회관, 미소식당" required></label>
         <label class="field"><span class="lbl">보관 구분</span>
           <select id="f_category">
             <option value="none">해당없음</option>
@@ -220,20 +229,30 @@
         <span class="lbl" style="margin:0;">이 장소를 출발지 후보로 사용 (예: 창고, 물류센터)</span>
       </label>
       <div class="btn-row" style="margin-top:14px;">
-        <button type="submit" class="btn-primary" id="saveLocBtn">배달처 저장</button>
+        <button type="submit" class="btn-primary" id="saveLocBtn">업체 저장</button>
         <button type="button" class="btn-ghost" id="cancelEditBtn" style="display:none;">수정 취소</button>
       </div>
     </form>
   </section>
 
   <section class="card">
-    <h2><span class="step-no">4</span>배달처 목록 <span style="font-size:13px; font-weight:600; color:var(--ink-soft);" id="locCount"></span></h2>
+    <h2><span class="step-no">4</span>업체 목록 <span style="font-size:13px; font-weight:600; color:var(--ink-soft);" id="locCount"></span></h2>
     <div class="searchbar"><input type="text" id="searchInput" placeholder="이름, 주소, 메모로 검색"></div>
     <div class="loc-grid" id="locGrid"></div>
   </section>
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div id="mapModal">
+  <div id="mapPanel">
+    <div id="mapPanelHead">
+      <strong>오늘의 배송 경로 지도</strong>
+      <button type="button" class="btn-ghost btn-sm" id="closeMapBtn">닫기 ✕</button>
+    </div>
+    <div id="mapEl"></div>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -427,7 +446,7 @@
   function renderPicker(){
     var wrap = document.getElementById('stopPicker');
     var hint = document.getElementById('pickerHint');
-    hint.textContent = state.locations.length ? '' : '등록된 배달처가 없습니다. 아래 3번 "배달처 등록"에서 먼저 추가해 주세요.';
+    hint.textContent = state.locations.length ? '' : '등록된 업체가 없습니다. 아래 3번 "업체등록"에서 먼저 추가해 주세요.';
     wrap.innerHTML = '';
     updatePickerCount();
     if (!state.locations.length){ wrap.innerHTML = '<div class="empty">등록된 배달처가 없습니다.</div>'; return; }
@@ -627,7 +646,7 @@
     document.getElementById('locForm').reset();
     document.getElementById('editId').value = '';
     document.getElementById('cancelEditBtn').style.display = 'none';
-    document.getElementById('saveLocBtn').textContent = '배달처 저장';
+    document.getElementById('saveLocBtn').textContent = '업체 저장';
   }
   function deleteLoc(id){
     state.locations = state.locations.filter(function(l){ return l.id!==id; });
@@ -695,7 +714,7 @@
     var lng = parseFloat(document.getElementById('f_lng').value);
     var name = document.getElementById('f_name').value.trim();
     var address = document.getElementById('f_address').value.trim();
-    if (!name){ toast('배달처 이름을 입력해주세요.'); return; }
+    if (!name){ toast('상호명을 입력해주세요.'); return; }
     if (!address){ toast('주소를 입력해주세요.'); return; }
 
     var categoryVal = document.getElementById('f_category').value;
@@ -782,6 +801,64 @@
   document.getElementById('reoptBtn').addEventListener('click', function(){
     toast('전체를 다시 최적화합니다 (직접 조정한 순서는 초기화돼요).');
     runCalc(document.getElementById('reoptBtn'));
+  });
+
+  // ---------- map ----------
+  var leafletMap = null;
+  var mapLayerGroup = null;
+  function ensureMap(){
+    if (leafletMap) return leafletMap;
+    leafletMap = L.map('mapEl');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(leafletMap);
+    return leafletMap;
+  }
+
+  function showRouteOnMap(){
+    if (!state.order){ toast('먼저 "오늘 순서 계산하기"를 눌러주세요.'); return; }
+    var start = state.order.start;
+    if (!hasCoords(start)){ toast('출발지에 좌표가 없어 지도를 표시할 수 없어요.'); return; }
+    var seq = state.order.seq.filter(hasCoords);
+
+    document.getElementById('mapModal').style.display = 'flex';
+    var map = ensureMap();
+    setTimeout(function(){ map.invalidateSize(); }, 60);
+
+    if (mapLayerGroup) mapLayerGroup.remove();
+    mapLayerGroup = L.layerGroup().addTo(map);
+
+    var latlngs = [[start.lat, start.lng]].concat(seq.map(function(s){ return [s.lat, s.lng]; }));
+    var startIcon = L.divIcon({ className:'', html:'<div class="map-pin-start">🏁</div>', iconSize:[26,26] });
+    L.marker([start.lat, start.lng], { icon:startIcon }).addTo(mapLayerGroup).bindPopup('출발지: ' + escapeHtml(start.name));
+    seq.forEach(function(s, i){
+      var numIcon = L.divIcon({ className:'', html:'<div class="map-pin-num">' + (i+1) + '</div>', iconSize:[24,24] });
+      L.marker([s.lat, s.lng], { icon:numIcon }).addTo(mapLayerGroup)
+        .bindPopup((i+1) + '. ' + escapeHtml(s.name) + (s.address ? '<br>' + escapeHtml(s.address) : ''));
+    });
+    map.fitBounds(L.latLngBounds(latlngs), { padding:[30,30] });
+
+    if (!seq.length) return;
+    fetch('/api/route', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        fixedOrder: true, returnToStart: true, geometry: true,
+        start: { lat:start.lat, lng:start.lng },
+        stops: seq.map(function(s){ return { lat:s.lat, lng:s.lng }; })
+      })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d && d.geometry && d.geometry.length){
+        var poly = d.geometry.map(function(c){ return [c[1], c[0]]; });
+        var line = L.polyline(poly, { color:'#3b82f6', weight:4, opacity:0.85 }).addTo(mapLayerGroup);
+        map.fitBounds(line.getBounds(), { padding:[30,30] });
+      }
+    }).catch(function(){ /* 경로선 없이도 마커는 이미 보이니 조용히 무시 */ });
+  }
+
+  document.getElementById('showMapBtn').addEventListener('click', showRouteOnMap);
+  document.getElementById('closeMapBtn').addEventListener('click', function(){
+    document.getElementById('mapModal').style.display = 'none';
   });
 
   function goToNextStop(){
