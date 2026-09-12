@@ -139,15 +139,19 @@ module.exports = async (req, res) => {
 
     // ---------- mode: fixedOrder ----------
     if (fixedOrder) {
+      const wantGeometry = !!body.geometry;
       const routePoints = returnToStart ? points.concat([start]) : points;
+      const overviewParams = wantGeometry ? '&overview=full&geometries=geojson' : '&overview=false';
       const d = await osrmGet('https://router.project-osrm.org/route/v1/driving/' + coordStr(routePoints) +
-        '?steps=false&overview=false');
+        '?steps=false' + overviewParams);
       if (d.code !== 'Ok') {
         return res.status(502).json({ error: 'osrm_error', detail: d.code, message: d.message || '' });
       }
       const route = d.routes[0];
       const legs = (route.legs || []).map(function (leg) { return { distanceM: leg.distance, durationS: leg.duration }; });
-      return res.status(200).json({ order: stops, legs: legs, totalDistanceM: route.distance, totalDurationS: route.duration });
+      const resp = { order: stops, legs: legs, totalDistanceM: route.distance, totalDurationS: route.duration };
+      if (wantGeometry && route.geometry && route.geometry.coordinates) resp.geometry = route.geometry.coordinates;
+      return res.status(200).json(resp);
     }
 
     // ---------- mode: optimize (default) ----------
