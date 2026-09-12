@@ -90,6 +90,11 @@
 
   .route-list{ display:flex; flex-direction:column; gap:10px; }
   .stop-card{ display:flex; gap:12px; padding:12px; border:1px solid var(--line); border-radius:11px; background:var(--surface-2); }
+  .stop-card.done{ opacity:.45; }
+  .stop-card.done .stop-name{ text-decoration:line-through; }
+  .stop-card.next{ border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .done-check{ display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:var(--ink-soft); flex:none; }
+  .done-check input{ width:18px; height:18px; accent-color:var(--accent); }
   .order-num{ font-family:"Black Han Sans",sans-serif; font-size:24px; color:var(--accent); flex:none; width:30px; text-align:center; line-height:1.3; }
   .stop-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }
   .stop-top{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -138,6 +143,7 @@
   <section class="card" id="pickerCard">
     <h2><span class="step-no">1</span>출발지 &amp; 오늘 배달처 고르기</h2>
     <div class="hint" id="pickerHint"></div>
+    <div class="hint" id="pickerCount" style="font-weight:700;"></div>
     <div class="stop-picker" id="stopPicker"></div>
     <label class="field" style="max-width:180px;"><span class="lbl">오늘 출발 시각</span><input type="time" id="departTime" value="03:00"></label>
     <div class="btn-row">
@@ -149,6 +155,10 @@
   <section class="card" id="routeCard" style="display:none;">
     <h2><span class="step-no">2</span>오늘의 방문 순서</h2>
     <div class="hint" id="routeSummary"></div>
+    <div class="btn-row">
+      <button class="btn-primary" id="nextStopBtn" type="button">▶ 다음 배달처 티맵으로 열기</button>
+      <button class="btn-ghost btn-sm" id="resetDoneBtn" type="button">완료 표시 초기화</button>
+    </div>
     <div class="route-list" id="routeList"></div>
     <hr class="divider">
     <div class="hint">티맵 앱은 경유지를 최대 5곳까지 받을 수 있어, 구간을 나눠 열어드립니다.</div>
@@ -167,13 +177,18 @@
         <label class="field"><span class="lbl">배달처 이름 *</span><input type="text" id="f_name" placeholder="예: 상록회관, 미소식당" required></label>
         <label class="field"><span class="lbl">보관 구분</span>
           <select id="f_category">
+            <option value="none">해당없음</option>
             <option value="kitchen">주방상온</option>
             <option value="porch">현관상온</option>
             <option value="cold">냉장주의</option>
             <option value="frozen">냉동주의</option>
             <option value="mix">냉장 및 냉동주의</option>
+            <option value="custom">기타 (직접 입력)</option>
           </select>
         </label>
+      </div>
+      <div class="row2" id="customCatWrap" style="display:none; margin-top:10px;">
+        <label class="field" style="grid-column:1/-1;"><span class="lbl">보관 구분 (직접 입력)</span><input type="text" id="f_categoryCustom" placeholder="예: 상온·습기주의, 위험물 등"></label>
       </div>
       <label class="field" style="margin-top:10px;"><span class="lbl">주소 *</span><input type="text" id="f_address" placeholder="지번 또는 도로명 주소" required></label>
       <details style="margin-top:8px;">
@@ -223,8 +238,13 @@
   var todayEl = document.getElementById('todayDate');
   todayEl.textContent = new Intl.DateTimeFormat('ko-KR', { month:'long', day:'numeric', weekday:'short' }).format(new Date());
 
-  var CAT_LABEL = { kitchen:'주방상온', porch:'현관상온', cold:'냉장주의', frozen:'냉동주의', mix:'냉장·냉동주의' };
-  var CAT_CLASS = { kitchen:'ambient', porch:'porch', cold:'cold', frozen:'frozen', mix:'mix' };
+  var CAT_LABEL = { none:'해당없음', kitchen:'주방상온', porch:'현관상온', cold:'냉장주의', frozen:'냉동주의', mix:'냉장·냉동주의', custom:'기타' };
+  var CAT_CLASS = { none:'ambient', kitchen:'ambient', porch:'porch', cold:'cold', frozen:'frozen', mix:'mix', custom:'porch' };
+  function catLabel(loc){
+    if (loc.category === 'custom') return loc.categoryCustom ? loc.categoryCustom : '기타';
+    return CAT_LABEL[loc.category] || loc.category || '해당없음';
+  }
+  function catClass(loc){ return CAT_CLASS[loc.category] || 'ambient'; }
   var DWELL_MIN = 5;
 
   var state = { locations: [], selected:{}, startId:null, order:null };
@@ -293,11 +313,33 @@
   }
 
   // ---------- rendering ----------
+  function updatePickerCount(){
+    var countEl = document.getElementById('pickerCount');
+    if (!countEl) return;
+    var selectedLocs = Object.keys(state.selected).map(locById).filter(Boolean);
+    var n = selectedLocs.length;
+    if (!n){ countEl.textContent = ''; return; }
+    var addrMap = {};
+    selectedLocs.forEach(function(l){
+      var a = (l.address||'').trim();
+      if (!a) return;
+      addrMap[a] = (addrMap[a]||0) + 1;
+    });
+    var dupAddrs = Object.keys(addrMap).filter(function(a){ return addrMap[a] > 1; });
+    var text = '오늘 선택된 배달처: 총 ' + n + '곳';
+    if (dupAddrs.length){
+      var dupNames = selectedLocs.filter(function(l){ return dupAddrs.indexOf((l.address||'').trim()) !== -1; }).map(function(l){ return l.name; });
+      text += ' · ⚠ 같은 주소 배달처 ' + dupNames.length + '곳 포함 (' + dupNames.join(', ') + ') — 같은 건물이면 문제 없어요.';
+    }
+    countEl.textContent = text;
+  }
+
   function renderPicker(){
     var wrap = document.getElementById('stopPicker');
     var hint = document.getElementById('pickerHint');
     hint.textContent = state.locations.length ? '' : '등록된 배달처가 없습니다. 아래 3번 "배달처 등록"에서 먼저 추가해 주세요.';
     wrap.innerHTML = '';
+    updatePickerCount();
     if (!state.locations.length){ wrap.innerHTML = '<div class="empty">등록된 배달처가 없습니다.</div>'; return; }
     state.locations.forEach(function(loc){
       var row = document.createElement('label');
@@ -306,13 +348,13 @@
         '<input type="radio" name="startPick" data-id="' + loc.id + '" ' + (state.startId===loc.id?'checked':'') + '>' +
         '<input type="checkbox" data-sel-id="' + loc.id + '" ' + (state.selected[loc.id]?'checked':'') + '>' +
         '<span class="name">' + escapeHtml(loc.name) + '</span>' +
-        '<span class="badge ' + CAT_CLASS[loc.category] + '">' + CAT_LABEL[loc.category] + '</span>' +
+        '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span>' +
         (loc.isStart ? '<span class="badge start">출발지 후보</span>' : '') +
         (!hasCoords(loc) ? '<span class="badge warn">좌표없음</span>' : '');
       wrap.appendChild(row);
     });
     wrap.querySelectorAll('input[name="startPick"]').forEach(function(r){ r.addEventListener('change', function(){ state.startId = this.dataset.id; renderPicker(); }); });
-    wrap.querySelectorAll('input[data-sel-id]').forEach(function(c){ c.addEventListener('change', function(){ if (this.checked) state.selected[this.dataset.selId]=true; else delete state.selected[this.dataset.selId]; }); });
+    wrap.querySelectorAll('input[data-sel-id]').forEach(function(c){ c.addEventListener('change', function(){ if (this.checked) state.selected[this.dataset.selId]=true; else delete state.selected[this.dataset.selId]; updatePickerCount(); }); });
   }
 
   function moveStop(idx, delta){
@@ -355,9 +397,15 @@
     var lateCount = 0, totalDist = state.order.totalDistanceM || 0, totalDur = state.order.totalDurationS || 0;
     var prev = start;
 
+    if (!state.order.completed) state.order.completed = {};
+    var completed = state.order.completed;
+    var nextIdx = schedule.findIndex(function(entry){ return !completed[entry.loc.id]; });
+
     schedule.forEach(function(entry, i){
       var loc = entry.loc;
       if (entry.early) lateCount++;
+      var isDone = !!completed[loc.id];
+      var isNext = (i === nextIdx);
       var distLine = entry.leg
         ? ('이전 지점에서 실제 주행 ' + fmtKm(entry.leg.distanceM) + ' (' + fmtMin(entry.leg.durationS) + ') · 예상 도착 ' + fmtHHMM(entry.arrivalMin))
         : '경로 정보 없음';
@@ -370,7 +418,7 @@
       if (loc.memo) notesHtml += '<div><b>메모</b> ' + escapeHtml(loc.memo) + '</div>';
 
       var card2 = document.createElement('div');
-      card2.className = 'stop-card';
+      card2.className = 'stop-card' + (isDone ? ' done' : '') + (isNext ? ' next' : '');
       card2.innerHTML =
         '<div class="order-num">' + (i+1) + '</div>' +
         '<div class="move-btns">' +
@@ -379,8 +427,10 @@
         '</div>' +
         '<div class="stop-body">' +
           '<div class="stop-top"><span class="stop-name">' + escapeHtml(loc.name) + '</span>' +
-          '<span class="badge ' + CAT_CLASS[loc.category] + '">' + CAT_LABEL[loc.category] + '</span>' +
+          '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span>' +
+          (isNext ? '<span class="badge start">▶ 다음 목적지</span>' : '') +
           (entry.early ? '<span class="badge warn">⏰ 개점 전 도착 예상 (예상 ' + fmtHHMM(entry.arrivalMin) + ' / 오픈 ' + loc.openTime + ')</span>' : '') +
+          '<label class="done-check" style="margin-left:auto;"><input type="checkbox" data-done="'+i+'" ' + (isDone?'checked':'') + '> 도착 완료</label>' +
           '</div>' +
           (loc.address ? '<div class="stop-addr">' + escapeHtml(loc.address) + '</div>' : '') +
           '<div class="leg-dist">' + distLine + '</div>' +
@@ -394,9 +444,18 @@
     list.querySelectorAll('[data-up]').forEach(function(b){ b.addEventListener('click', function(){ moveStop(parseInt(this.dataset.up,10), -1); }); });
     list.querySelectorAll('[data-down]').forEach(function(b){ b.addEventListener('click', function(){ moveStop(parseInt(this.dataset.down,10), 1); }); });
     list.querySelectorAll('[data-toend]').forEach(function(b){ b.addEventListener('click', function(){ moveStopToEnd(parseInt(this.dataset.toend,10)); }); });
+    list.querySelectorAll('[data-done]').forEach(function(b){
+      b.addEventListener('change', function(){
+        var idx = parseInt(this.dataset.done,10);
+        var loc = schedule[idx].loc;
+        if (this.checked) completed[loc.id] = true; else delete completed[loc.id];
+        renderRoute();
+      });
+    });
 
+    var remaining = schedule.length - Object.keys(completed).filter(function(id){ return schedule.some(function(e){ return e.loc.id===id; }); }).length;
     document.getElementById('routeSummary').textContent =
-      '출발 ' + fmtHHMM(departMin) + ' (' + start.name + ') · 총 ' + seq.length + '곳 · 실제 도로거리 약 ' + fmtKm(totalDist) + ' · 예상 주행시간 ' + fmtMin(totalDur) +
+      '출발 ' + fmtHHMM(departMin) + ' (' + start.name + ') · 총 ' + seq.length + '곳 (남은 ' + remaining + '곳) · 실제 도로거리 약 ' + fmtKm(totalDist) + ' · 예상 주행시간 ' + fmtMin(totalDur) +
       (lateCount ? ' · ⏰ 개점 전 도착 예상 ' + lateCount + '곳' : '');
 
     // 티맵 경유지는 최대 5곳까지 → 6곳(경유 5 + 목적지 1) 단위로 링크를 나눔
@@ -430,7 +489,7 @@
       el.innerHTML =
         '<div class="top"><span class="name">' + escapeHtml(loc.name) + '</span></div>' +
         '<div class="addr">' + (loc.address ? escapeHtml(loc.address) : '주소 미등록') + '</div>' +
-        '<div><span class="badge ' + CAT_CLASS[loc.category] + '">' + CAT_LABEL[loc.category] + '</span> ' +
+        '<div><span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span> ' +
           (loc.isStart ? '<span class="badge start">출발지 후보</span>' : '') +
           (!hasCoords(loc) ? '<span class="badge warn">좌표없음</span>' : '') + '</div>' +
         (loc.keyLoc ? '<div class="kv"><b>열쇠</b><span>' + escapeHtml(loc.keyLoc) + '</span></div>' : '') +
@@ -454,6 +513,8 @@
     document.getElementById('editId').value = loc.id;
     document.getElementById('f_name').value = loc.name || '';
     document.getElementById('f_category').value = loc.category || 'kitchen';
+    document.getElementById('f_categoryCustom').value = loc.categoryCustom || '';
+    toggleCustomCatWrap();
     document.getElementById('f_address').value = loc.address || '';
     document.getElementById('f_lat').value = hasCoords(loc) ? loc.lat : '';
     document.getElementById('f_lng').value = hasCoords(loc) ? loc.lng : '';
@@ -478,6 +539,13 @@
     if (state.startId===id) state.startId=null;
     saveLocations(); renderAll(); toast('삭제했습니다.');
   }
+
+  function toggleCustomCatWrap(){
+    var v = document.getElementById('f_category').value;
+    document.getElementById('customCatWrap').style.display = (v === 'custom') ? 'grid' : 'none';
+  }
+  document.getElementById('f_category').addEventListener('change', toggleCustomCatWrap);
+  toggleCustomCatWrap();
 
   document.getElementById('cancelEditBtn').addEventListener('click', resetForm);
 
@@ -508,13 +576,18 @@
     if (!name){ toast('배달처 이름을 입력해주세요.'); return; }
     if (!address){ toast('주소를 입력해주세요.'); return; }
 
+    var categoryVal = document.getElementById('f_category').value;
     var data = {
-      name: name, category: document.getElementById('f_category').value, address: address,
+      name: name, category: categoryVal, address: address,
+      categoryCustom: (categoryVal === 'custom') ? document.getElementById('f_categoryCustom').value.trim() : '',
       lat: isNaN(lat) ? null : lat, lng: isNaN(lng) ? null : lng,
       keyLoc: document.getElementById('f_key').value.trim(), pw: document.getElementById('f_pw').value.trim(),
       openTime: document.getElementById('f_open').value || '', memo: document.getElementById('f_memo').value.trim(),
       isStart: document.getElementById('f_isStart').checked, updatedAt: Date.now()
     };
+
+    var dupAddr = state.locations.some(function(l){ return l.id !== id && l.address && l.address.trim() === address; });
+    if (dupAddr){ toast('같은 주소를 쓰는 배달처가 이미 있어요. (같은 건물이면 정상, 오탈자면 확인해주세요)'); }
 
     var saveBtn = document.getElementById('saveLocBtn');
     var orig = saveBtn.textContent;
@@ -551,7 +624,7 @@
   });
 
   document.getElementById('searchInput').addEventListener('input', renderLocGrid);
-  document.getElementById('clearPickBtn').addEventListener('click', function(){ state.selected={}; renderPicker(); });
+  document.getElementById('clearPickBtn').addEventListener('click', function(){ state.selected={}; renderPicker(); updatePickerCount(); });
   document.getElementById('departTime').addEventListener('change', function(){ if (state.order) renderRoute(); });
 
   document.getElementById('calcBtn').addEventListener('click', function(){
@@ -580,6 +653,24 @@
     }).catch(function(){
       toast('경로 계산 중 오류가 발생했어요. 네트워크 상태를 확인해주세요.');
     }).then(function(){ btn.disabled=false; btn.textContent=orig; });
+  });
+
+  function goToNextStop(){
+    if (!state.order) return;
+    var start = state.order.start, seq = state.order.seq;
+    var completed = state.order.completed || {};
+    var idx = seq.findIndex(function(loc){ return !completed[loc.id]; });
+    if (idx === -1){ toast('오늘 배송을 모두 완료하셨습니다! 🎉'); return; }
+    var prev = idx===0 ? start : seq[idx-1];
+    var loc = seq[idx];
+    var link = hasCoords(loc) ? singleTmapLink(prev, loc) : tmapSearchLink(loc.address||loc.name);
+    window.location.href = link;
+  }
+  document.getElementById('nextStopBtn').addEventListener('click', goToNextStop);
+  document.getElementById('resetDoneBtn').addEventListener('click', function(){
+    if (state.order) state.order.completed = {};
+    renderRoute();
+    toast('완료 표시를 초기화했어요.');
   });
 
   document.getElementById('copyRouteBtn').addEventListener('click', function(){
