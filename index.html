@@ -238,6 +238,12 @@
   <section class="card">
     <h2><span class="step-no">4</span>업체 목록 <span style="font-size:13px; font-weight:600; color:var(--ink-soft);" id="locCount"></span></h2>
     <div class="searchbar"><input type="text" id="searchInput" placeholder="이름, 주소, 메모로 검색"></div>
+    <div class="btn-row" style="margin-top:10px;">
+      <button type="button" class="btn-ghost btn-sm" id="exportBtn">📤 데이터 내보내기 (파일로 저장)</button>
+      <button type="button" class="btn-ghost btn-sm" id="importBtn">📥 다른 기기 데이터 불러오기</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none;">
+    </div>
+    <div class="hint" style="margin-top:6px;">기기를 바꾸거나 다른 사람 것과 합칠 때, 이 기기의 업체 목록을 파일로 내려받은 뒤 새 기기에서 "불러오기"로 열면 옮길 수 있어요.</div>
     <div class="loc-grid" id="locGrid"></div>
   </section>
 </div>
@@ -337,6 +343,20 @@
         start: { lat:start.lat, lng:start.lng },
         stops: stops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }),
         fixedOrder: !!fixedOrder
+      })
+    }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); });
+  }
+
+  // 선택한 배달처 중 오픈시간이 있는 곳이 있으면, 그 시간에 맞춰 도착하도록(필요하면 대기)
+  // 전체 소요시간이 최소가 되는 순서를 계산. (단순 거리최적화가 아니라 오픈시간까지 감안)
+  function fetchTimeWindowRoute(start, stops, departMin){
+    return fetch('/api/route', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'timeWindow',
+        start: { lat:start.lat, lng:start.lng },
+        stops: stops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id, openMin: parseHHMM(s.openTime) }; }),
+        departMin: departMin, dwellMin: DWELL_MIN, returnToStart: true
       })
     }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); });
   }
@@ -488,15 +508,19 @@
     var cur = departMin, out = [];
     seq.forEach(function(loc, i){
       var leg = legs && legs[i];
-      var arrivalMin = null;
+      var arrivalMin = null, waitMin = 0;
       if (leg){
         cur += leg.durationS/60;
         arrivalMin = cur;
+        var openMin = parseHHMM(loc.openTime);
+        if (openMin!=null && arrivalMin < openMin-0.5){
+          waitMin = openMin - arrivalMin;
+          cur = openMin;
+        }
         cur += DWELL_MIN;
       }
-      var openMin = parseHHMM(loc.openTime);
-      var early = (arrivalMin!=null) && (openMin!=null) && (arrivalMin < openMin-0.5);
-      out.push({ loc:loc, arrivalMin:arrivalMin, early:early, leg:leg });
+      var early = waitMin > 0.5;
+      out.push({ loc:loc, arrivalMin:arrivalMin, waitMin:waitMin, early:early, leg:leg });
     });
     return out;
   }
@@ -544,7 +568,7 @@
           '<div class="stop-top"><span class="stop-name">' + escapeHtml(loc.name) + '</span>' +
           '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span>' +
           (isNext ? '<span class="badge start">▶ 다음 목적지</span>' : '') +
-          (entry.early ? '<span class="badge warn">⏰ 개점 전 도착 예상 (예상 ' + fmtHHMM(entry.arrivalMin) + ' / 오픈 ' + loc.openTime + ')</span>' : '') +
+          (entry.early ? '<span class="badge warn">⏰ ' + Math.round(entry.waitMin) + '분 대기 후 진행 (도착 ' + fmtHHMM(entry.arrivalMin) + ' / 오픈 ' + loc.openTime + ')</span>' : '') +
           '<label class="done-check" style="margin-left:auto;"><input type="checkbox" data-done="'+i+'" ' + (isDone?'checked':'') + '> 도착 완료</label>' +
           '</div>' +
           (loc.address ? '<div class="stop-addr">' + escapeHtml(loc.address) + '</div>' : '') +
@@ -571,7 +595,7 @@
     var remaining = schedule.length - Object.keys(completed).filter(function(id){ return schedule.some(function(e){ return e.loc.id===id; }); }).length;
     document.getElementById('routeSummary').textContent =
       '출발 ' + fmtHHMM(departMin) + ' (' + start.name + ') · 총 ' + seq.length + '곳 (남은 ' + remaining + '곳) · 실제 도로거리 약 ' + fmtKm(totalDist) + ' · 예상 주행시간 ' + fmtMin(totalDur) +
-      (lateCount ? ' · ⏰ 개점 전 도착 예상 ' + lateCount + '곳' : '');
+      (lateCount ? ' · ⏰ 오픈시간 대기 ' + lateCount + '곳' : '');
 
     // 티맵 경유지는 최대 5곳까지 → 6곳(경유 5 + 목적지 1) 단위로 링크를 나눔
     var groupsEl = document.getElementById('legGroups'); groupsEl.innerHTML = '';
@@ -765,6 +789,54 @@
   });
 
   document.getElementById('searchInput').addEventListener('input', renderLocGrid);
+
+  // ---------- 다른 기기로 데이터 내보내기/불러오기 ----------
+  document.getElementById('exportBtn').addEventListener('click', function(){
+    var data = { exportedAt: Date.now(), locations: state.locations };
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = '업체목록_' + new Date().toISOString().slice(0,10) + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    toast('업체 목록을 파일로 내려받았어요.');
+  });
+
+  document.getElementById('importBtn').addEventListener('click', function(){
+    document.getElementById('importFile').click();
+  });
+
+  document.getElementById('importFile').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      try {
+        var parsed = JSON.parse(reader.result);
+        var imported = Array.isArray(parsed) ? parsed : (parsed.locations || []);
+        if (!Array.isArray(imported) || !imported.length){ toast('불러올 데이터가 없어요.'); return; }
+        var replace = confirm(
+          '지금 이 기기의 업체 목록을 파일 내용으로 완전히 덮어쓸까요?\n\n' +
+          '"확인" = 덮어쓰기 (지금 기기에 있던 목록은 사라져요)\n' +
+          '"취소" = 기존 목록에 합치기 (같은 업체는 건너뜀)'
+        );
+        if (replace) {
+          state.locations = imported;
+        } else {
+          var existingIds = {};
+          state.locations.forEach(function(l){ existingIds[l.id] = true; });
+          imported.forEach(function(l){ if (!existingIds[l.id]) state.locations.push(l); });
+        }
+        saveLocations();
+        renderAll();
+        toast('불러오기를 완료했어요. (' + imported.length + '곳)');
+      } catch (err) {
+        toast('파일을 읽는 중 오류가 발생했어요. 올바른 파일인지 확인해주세요.');
+      }
+      document.getElementById('importFile').value = '';
+    };
+    reader.readAsText(file);
+  });
   document.getElementById('clearPickBtn').addEventListener('click', function(){ state.selected={}; renderPicker(); updatePickerCount(); });
   document.getElementById('departTime').addEventListener('change', function(){ if (state.order) renderRoute(); });
 
@@ -779,9 +851,15 @@
     if (!withCoords.length){ toast('좌표가 있는 배달처를 1곳 이상 선택해주세요.'); return; }
 
     var orig = btn.textContent;
-    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 실제 도로거리로 계산 중...';
+    var departMin = parseHHMM(document.getElementById('departTime').value) || 180;
+    var hasOpenTimes = withCoords.some(function(s){ return parseHHMM(s.openTime) != null; });
 
-    fetchRealRoute(startLoc, withCoords).then(function(res){
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> ' + (hasOpenTimes ? '오픈시간까지 감안해서 계산 중...' : '실제 도로거리로 계산 중...');
+
+    var routePromise = hasOpenTimes ? fetchTimeWindowRoute(startLoc, withCoords, departMin) : fetchRealRoute(startLoc, withCoords);
+
+    routePromise.then(function(res){
       if (!res.ok || !res.data || !res.data.order){
         toast('경로 계산에 실패했어요 (' + (res.data && res.data.error || '') + '). 잠시 후 다시 시도해주세요.');
         return;
@@ -792,6 +870,7 @@
       renderRoute();
       document.getElementById('routeCard').scrollIntoView({ behavior:'smooth', block:'start' });
       if (withoutCoords.length) toast('좌표 없는 ' + withoutCoords.length + '곳은 목록 맨 뒤에 순서 미정으로 추가했어요.');
+      else if (hasOpenTimes) toast('오픈시간을 고려해서 순서를 최적화했어요.');
     }).catch(function(){
       toast('경로 계산 중 오류가 발생했어요. 네트워크 상태를 확인해주세요.');
     }).then(function(){ btn.disabled=false; btn.textContent=orig; });
@@ -885,7 +964,7 @@
     var schedule = estimateSchedule(departMin, state.order.seq, state.order.legs);
     var lines = [fmtHHMM(departMin) + ' ' + state.order.start.name + ' (출발)'];
     schedule.forEach(function(entry, i){
-      lines.push((i+1) + '. [' + (entry.arrivalMin!=null?fmtHHMM(entry.arrivalMin):'--:--') + '] ' + entry.loc.name + (entry.loc.address ? ' - ' + entry.loc.address : '') + (entry.early ? ' (⏰개점 전)' : ''));
+      lines.push((i+1) + '. [' + (entry.arrivalMin!=null?fmtHHMM(entry.arrivalMin):'--:--') + '] ' + entry.loc.name + (entry.loc.address ? ' - ' + entry.loc.address : '') + (entry.early ? ' (⏰' + Math.round(entry.waitMin) + '분 대기)' : ''));
     });
     var text = lines.join('\n');
     if (navigator.clipboard && navigator.clipboard.writeText){
