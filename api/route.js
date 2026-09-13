@@ -15,6 +15,77 @@ async function osrmGet(url) {
   return r.json();
 }
 
+// ---------- 오픈시간(대기시간)을 감안한 순서 최적화용 헬퍼 ----------
+// OSRM "trip" 서비스는 순수 거리/시간만 최소화할 뿐 "오픈시간에 맞춰 대기"같은 개념이 없어서,
+// 여기서는 전체 지점 간 실제 이동시간표(matrix)를 한 번 받아온 뒤,
+// "출발~복귀까지 걸리는 전체 시간(운전+대기+상하차)"이 최소가 되도록 직접 순서를 탐색합니다.
+async function fetchTable(points) {
+  const d = await osrmGet('https://router.project-osrm.org/table/v1/driving/' + coordStr(points) + '?annotations=duration,distance');
+  if (d.code !== 'Ok') throw new Error(d.code);
+  return { durations: d.durations, distances: d.distances };
+}
+
+// order: 방문할 지점들의 matrix 인덱스 배열(0=출발지 제외, 1..n). 전체 소요시간(finish)을 계산.
+function simulateSchedule(order, durations, distances, openSecs, departSec, dwellSec, returnToStart) {
+  let cur = departSec, totalDriveS = 0, totalDist = 0, totalWaitS = 0;
+  let prev = 0;
+  for (let i = 0; i < order.length; i++) {
+    const node = order[i];
+    const drive = durations[prev][node];
+    cur += drive; totalDriveS += drive; totalDist += distances[prev][node];
+    const openSec = openSecs[node];
+    if (openSec != null && cur < openSec) { totalWaitS += (openSec - cur); cur = openSec; }
+    cur += dwellSec;
+    prev = node;
+  }
+  if (returnToStart) {
+    cur += durations[prev][0]; totalDriveS += durations[prev][0]; totalDist += distances[prev][0];
+  }
+  return { finish: cur, totalDriveS: totalDriveS, totalDist: totalDist, totalWaitS: totalWaitS };
+}
+
+function nearestNeighborOrder(n, durations) {
+  const remaining = []; for (let i = 1; i <= n; i++) remaining.push(i);
+  const order = []; let prev = 0;
+  while (remaining.length) {
+    let bestIdx = 0, bestVal = Infinity;
+    for (let r = 0; r < remaining.length; r++) {
+      if (durations[prev][remaining[r]] < bestVal) { bestVal = durations[prev][remaining[r]]; bestIdx = r; }
+    }
+    const node = remaining.splice(bestIdx, 1)[0];
+    order.push(node); prev = node;
+  }
+  return order;
+}
+
+// 2-opt(구간 뒤집기) + or-opt(한 곳 위치 옮기기) 지역 탐색으로,
+// "전체 소요시간(운전+대기)"이 최소가 되는 순서를 찾음. 배달처 10~20곳 규모면 충분히 빠름.
+function localSearchMinFinish(initialOrder, durations, distances, openSecs, departSec, dwellSec, returnToStart) {
+  let order = initialOrder.slice();
+  let bestCost = simulateSchedule(order, durations, distances, openSecs, departSec, dwellSec, returnToStart).finish;
+  let improved = true, iter = 0;
+  while (improved && iter < 60) {
+    improved = false; iter++;
+    for (let i = 0; i < order.length - 1; i++) {
+      for (let j = i + 1; j < order.length; j++) {
+        const cand = order.slice(0, i).concat(order.slice(i, j + 1).reverse()).concat(order.slice(j + 1));
+        const cost = simulateSchedule(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart).finish;
+        if (cost < bestCost - 1e-6) { order = cand; bestCost = cost; improved = true; }
+      }
+    }
+    for (let i = 0; i < order.length; i++) {
+      const node = order[i];
+      const without = order.slice(0, i).concat(order.slice(i + 1));
+      for (let k = 0; k <= without.length; k++) {
+        const cand = without.slice(0, k).concat([node]).concat(without.slice(k));
+        const cost = simulateSchedule(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart).finish;
+        if (cost < bestCost - 1e-6) { order = cand; bestCost = cost; improved = true; }
+      }
+    }
+  }
+  return order;
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'method_not_allowed' });
@@ -116,6 +187,55 @@ module.exports = async (req, res) => {
         return res.status(200).json({
           segmentsOrder: segmentsOrder, legs: scheduleLegs,
           totalDistanceM: totalDistanceM, totalDurationS: totalDurationS
+        });
+      } catch (e) {
+        return res.status(502).json({ error: 'osrm_error', message: String(e && e.message || e) });
+      }
+    }
+
+    // ---------- mode: timeWindow ----------
+    // 오픈시간이 있는 배달처는 "그 시간 근처에 도착하도록" 순서를 배치하고,
+    // 조금 일찍 도착하면 대기했다가 진행하는 것까지 감안해서, 출발~복귀까지
+    // 전체 걸리는 시간이 최소가 되는 순서를 계산합니다.
+    // body: { mode:'timeWindow', start, stops:[{lat,lng,_ref,openMin(0~1439, 없으면 null)}...],
+    //         departMin(출발시각, 0~1439), dwellMin(상하차 소요분), returnToStart }
+    if (body.mode === 'timeWindow') {
+      const start = body.start;
+      const stops = Array.isArray(body.stops) ? body.stops : [];
+      const departMin = typeof body.departMin === 'number' ? body.departMin : 180;
+      const dwellMin = typeof body.dwellMin === 'number' ? body.dwellMin : 5;
+
+      if (!start || typeof start.lat !== 'number' || typeof start.lng !== 'number') {
+        return res.status(400).json({ error: 'missing_start' });
+      }
+      if (!stops.length) {
+        return res.status(400).json({ error: 'missing_stops' });
+      }
+
+      try {
+        const points = [start].concat(stops);
+        const table = await fetchTable(points);
+        const n = stops.length;
+        const openSecs = [null];
+        stops.forEach(function (s) { openSecs.push(typeof s.openMin === 'number' ? s.openMin * 60 : null); });
+        const departSec = departMin * 60;
+        const dwellSec = dwellMin * 60;
+
+        const initial = nearestNeighborOrder(n, table.durations);
+        const order = localSearchMinFinish(initial, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart);
+        const sim = simulateSchedule(order, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart);
+
+        const legs = [];
+        let prev = 0;
+        order.forEach(function (node) {
+          legs.push({ distanceM: table.distances[prev][node], durationS: table.durations[prev][node] });
+          prev = node;
+        });
+        const orderedStops = order.map(function (node) { return stops[node - 1]; });
+
+        return res.status(200).json({
+          order: orderedStops, legs: legs,
+          totalDistanceM: sim.totalDist, totalDurationS: sim.totalDriveS, totalWaitS: sim.totalWaitS
         });
       } catch (e) {
         return res.status(502).json({ error: 'osrm_error', message: String(e && e.message || e) });
