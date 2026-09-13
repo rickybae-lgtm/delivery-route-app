@@ -154,6 +154,19 @@
     <div class="hint" id="pickerCount" style="font-weight:700;"></div>
     <div class="stop-picker" id="stopPicker"></div>
     <label class="field" style="max-width:180px;"><span class="lbl">오늘 출발 시각</span><input type="time" id="departTime" value="03:00"></label>
+    <div class="field" style="margin-top:10px;">
+      <span class="lbl">계산 방식</span>
+      <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:4px;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
+          <input type="radio" name="calcMode" id="calcModeAuto" value="auto" checked style="width:16px;height:16px;accent-color:var(--accent);">
+          오픈시간 고려해서 계산 (오픈시간 있는 곳은 그 시간 맞춰 배치, 필요시 대기)
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
+          <input type="radio" name="calcMode" id="calcModeDistanceOnly" value="distanceOnly" style="width:16px;height:16px;accent-color:var(--accent);">
+          오픈시간 무시하고 순수 최단거리로 계산
+        </label>
+      </div>
+    </div>
     <div class="btn-row">
       <button class="btn-primary" id="calcBtn">오늘 순서 계산하기 (실제 도로거리)</button>
       <button class="btn-ghost btn-sm" id="clearPickBtn" type="button">선택 초기화</button>
@@ -852,7 +865,9 @@
 
     var orig = btn.textContent;
     var departMin = parseHHMM(document.getElementById('departTime').value) || 180;
-    var hasOpenTimes = withCoords.some(function(s){ return parseHHMM(s.openTime) != null; });
+    var modeEl = document.querySelector('input[name="calcMode"]:checked');
+    var calcMode = modeEl ? modeEl.value : 'auto';
+    var hasOpenTimes = calcMode === 'auto' && withCoords.some(function(s){ return parseHHMM(s.openTime) != null; });
 
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> ' + (hasOpenTimes ? '오픈시간까지 감안해서 계산 중...' : '실제 도로거리로 계산 중...');
