@@ -285,13 +285,36 @@ module.exports = async (req, res) => {
           skeleton = localSearchMinFinish(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart).order;
         }
 
-        // 2) 오픈시간 있는 곳들을 마감시간이 이른 순서대로, 뼈대 안에서 제일 나은 자리에 끼워 넣음
-        timedNodes.sort(function (a, b) { return openSecs[a] - openSecs[b]; });
-        timedNodes.forEach(function (node) {
-          skeleton = bestInsertion(skeleton, node, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart);
+        // 2) 뼈대(오픈시간 무시 동선)를 그대로 따라갔을 때 각 지점 도착시각을 미리 계산해두고,
+        //    오픈시간 있는 곳은 "그 시각과 제일 비슷한 시점"의 자리에 끼워 넣는다.
+        //    (거리/시간을 다시 비교해서 먼 곳으로 옮기지 않고, 순전히 "그 동네를 지나가는 시점"
+        //     기준으로만 끼워 넣기 때문에 지그재그가 생기지 않음)
+        let refCur = departSec, refPrev = 0;
+        const arrival = skeleton.map(function (node) {
+          refCur += table.durations[refPrev][node];
+          const t = refCur;
+          refCur += dwellSec;
+          refPrev = node;
+          return t;
         });
 
-        const order = skeleton;
+        timedNodes.sort(function (a, b) { return openSecs[a] - openSecs[b]; });
+        const slots = timedNodes.map(function (node) {
+          let pos = skeleton.length; // 기본값: 다 지나도 아직 시간이 안 됐으면 맨 뒤
+          for (let i = 0; i < arrival.length; i++) {
+            if (arrival[i] > openSecs[node]) { pos = i; break; }
+          }
+          return { node: node, pos: pos, openSec: openSecs[node] };
+        });
+        // 같은 자리에 여러 곳이 몰리면 마감시간이 이른 순서대로 나열
+        slots.sort(function (a, b) { return (a.pos - b.pos) || (a.openSec - b.openSec); });
+
+        const order = [];
+        let si = 0;
+        for (let i = 0; i <= skeleton.length; i++) {
+          while (si < slots.length && slots[si].pos === i) { order.push(slots[si].node); si++; }
+          if (i < skeleton.length) order.push(skeleton[i]);
+        }
         const sim = simulateSchedule(order, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart);
 
         const legs = [];
