@@ -74,6 +74,49 @@ function scheduleCost(order, durations, distances, openSecs, departSec, dwellSec
   return sim.finish * 1e10 + sim.totalDist * 100 + sim.earlyWaitS;
 }
 
+// order 순서대로 갔을 때, 대기를 적용하기 "전" 각 지점의 순수 도착시각(운전만 반영)을 배열로 반환.
+// 오픈시간 있는 곳이 실제로 오픈시간 전에 도착하는지 확인할 때 씀.
+function rawArrivalTimes(order, durations, dwellSec, departSec, openSecs) {
+  let cur = departSec, prev = 0;
+  return order.map(function (node) {
+    cur += durations[prev][node];
+    const rawArrival = cur;
+    const openSec = openSecs[node];
+    if (openSec != null && cur < openSec) cur = openSec; // 이전 지점이 오픈시간 있는 곳이면 대기 반영
+    cur += dwellSec;
+    prev = node;
+    return rawArrival;
+  });
+}
+
+function totalDistOf(order, distances, returnToStart) {
+  let d = 0, prev = 0;
+  order.forEach(function (node) { d += distances[prev][node]; prev = node; });
+  if (returnToStart) d += distances[prev][0];
+  return d;
+}
+
+// 오픈시간이 있는 node를 skeleton 안에 끼워 넣되, "오픈시간보다 최소 bufferSec만큼 일찍 도착"하는
+// 조건을 최우선으로 만족하는 자리를 고른다 (늦게 도착하는 자리는 정말 다른 방법이 전혀 없을 때만 선택).
+// 그 조건을 만족하는 자리가 여럿이면, 그중 버퍼가 딱 bufferSec에 가장 가까운(너무 일찍도 아닌) 자리,
+// 그것도 같으면 주행거리가 제일 적게 늘어나는 자리를 고른다.
+function bestInsertionBeforeOpen(skeleton, node, durations, distances, openSecs, departSec, dwellSec, returnToStart, bufferSec) {
+  const openSec = openSecs[node];
+  const target = openSec - bufferSec;
+  let bestPos = 0, bestCost = Infinity;
+  for (let k = 0; k <= skeleton.length; k++) {
+    const cand = skeleton.slice(0, k).concat([node]).concat(skeleton.slice(k));
+    const raw = rawArrivalTimes(cand, durations, dwellSec, departSec, openSecs);
+    const rawAtNode = raw[k];
+    const lateness = Math.max(0, rawAtNode - target); // 0이면 버퍼 조건 충족(=늦지 않음)
+    const slack = Math.max(0, target - rawAtNode);     // 버퍼보다 얼마나 더 일찍인지(작을수록 효율적)
+    const dist = totalDistOf(cand, distances, returnToStart);
+    const cost = lateness * 1e12 + slack * 1e6 + dist;
+    if (cost < bestCost - 1e-9) { bestCost = cost; bestPos = k; }
+  }
+  return skeleton.slice(0, bestPos).concat([node]).concat(skeleton.slice(bestPos));
+}
+
 function nearestNeighborOrder(n, durations) {
   const nodeList = []; for (let i = 1; i <= n; i++) nodeList.push(i);
   return nearestNeighborOrderSubset(nodeList, durations);
@@ -285,37 +328,28 @@ module.exports = async (req, res) => {
           skeleton = localSearchMinFinish(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart).order;
         }
 
-        // 2) 뼈대(오픈시간 무시 동선)를 그대로 따라갔을 때 각 지점 도착시각을 미리 계산해두고,
-        //    오픈시간 있는 곳은 "그 시각과 제일 비슷한 시점"의 자리에 끼워 넣는다.
-        //    (거리/시간을 다시 비교해서 먼 곳으로 옮기지 않고, 순전히 "그 동네를 지나가는 시점"
-        //     기준으로만 끼워 넣기 때문에 지그재그가 생기지 않음)
-        let refCur = departSec, refPrev = 0;
-        const arrival = skeleton.map(function (node) {
-          refCur += table.durations[refPrev][node];
-          const t = refCur;
-          refCur += dwellSec;
-          refPrev = node;
-          return t;
-        });
-
+        // 2) 오픈시간 있는 곳들을 마감시간이 이른 순서대로, 뼈대 안에서
+        //    "오픈시간보다 최소 10분 이상 일찍 도착"하는 자리에 끼워 넣는다.
+        //    (그런 자리가 여러 곳이면 그중 버퍼가 10분에 제일 가까운(=낭비 없는) 자리를 고르고,
+        //     정말 방법이 없을 때만 어쩔 수 없이 제일 덜 늦는 자리를 고름)
+        const OPEN_BUFFER_SEC = 10 * 60;
         timedNodes.sort(function (a, b) { return openSecs[a] - openSecs[b]; });
-        const slots = timedNodes.map(function (node) {
-          let pos = skeleton.length; // 기본값: 다 지나도 아직 시간이 안 됐으면 맨 뒤
-          for (let i = 0; i < arrival.length; i++) {
-            if (arrival[i] > openSecs[node]) { pos = i; break; }
-          }
-          return { node: node, pos: pos, openSec: openSecs[node] };
+        timedNodes.forEach(function (node) {
+          skeleton = bestInsertionBeforeOpen(skeleton, node, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart, OPEN_BUFFER_SEC);
         });
-        // 같은 자리에 여러 곳이 몰리면 마감시간이 이른 순서대로 나열
-        slots.sort(function (a, b) { return (a.pos - b.pos) || (a.openSec - b.openSec); });
 
-        const order = [];
-        let si = 0;
-        for (let i = 0; i <= skeleton.length; i++) {
-          while (si < slots.length && slots[si].pos === i) { order.push(slots[si].node); si++; }
-          if (i < skeleton.length) order.push(skeleton[i]);
-        }
+        const order = skeleton;
         const sim = simulateSchedule(order, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart);
+
+        // 혹시라도 정말 못 피한 지각이 있으면 경고용으로 표시할 수 있게 계산해둠
+        const rawArr = rawArrivalTimes(order, table.durations, dwellSec, departSec, openSecs);
+        const lateStops = [];
+        order.forEach(function (node, idx) {
+          const openSec = openSecs[node];
+          if (openSec != null && rawArr[idx] > openSec) {
+            lateStops.push({ _ref: stops[node - 1] && stops[node - 1]._ref, lateBySec: rawArr[idx] - openSec });
+          }
+        });
 
         const legs = [];
         let prev = 0;
@@ -327,7 +361,8 @@ module.exports = async (req, res) => {
 
         return res.status(200).json({
           order: orderedStops, legs: legs,
-          totalDistanceM: sim.totalDist, totalDurationS: sim.totalDriveS, totalWaitS: sim.totalWaitS
+          totalDistanceM: sim.totalDist, totalDurationS: sim.totalDriveS, totalWaitS: sim.totalWaitS,
+          lateStops: lateStops
         });
       } catch (e) {
         return res.status(502).json({ error: 'osrm_error', message: String(e && e.message || e) });
