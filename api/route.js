@@ -64,16 +64,24 @@ function simulateSchedule(order, durations, distances, openSecs, departSec, dwel
   };
 }
 
-// 안전 버퍼(마지막 마감시간 지점 직전 대기)는 그대로 두고, 그 외 낭비성 대기(earlyWaitS)에는
-// lambda배 가중치를 매겨서 지역탐색이 "중간에 몰아서 기다리는" 경로보다 "웬만한 곳 다 돌고
-// 마지막 마감시간 지점 앞에서만 여유를 두는" 경로를 선호하도록 만든다.
-function scheduleCost(order, durations, distances, openSecs, departSec, dwellSec, returnToStart, lambda) {
+// 우선순위를 확실히 구분하기 위해 사전식(lexicographic) 비교를 하나의 숫자로 인코딩:
+//   1순위) 실제 총 소요시간(finish) — 이게 조금이라도 늘어나는 선택은 절대 하지 않음
+//   2순위) 총 주행거리(totalDist) — 시간이 똑같다면 왕복 지그재그처럼 괜히 더 도는 경로는 피함
+//   3순위) earlyWaitS — 시간·거리가 둘 다 같을 때만, 대기를 마지막 마감시간 지점 앞으로 몰아줌
+// 각 자릿수 차이가 절대 섞이지 않도록 자릿수를 충분히 벌려둠.
+function scheduleCost(order, durations, distances, openSecs, departSec, dwellSec, returnToStart) {
   const sim = simulateSchedule(order, durations, distances, openSecs, departSec, dwellSec, returnToStart);
-  return sim.finish + (lambda || 0) * sim.earlyWaitS;
+  return sim.finish * 1e10 + sim.totalDist * 100 + sim.earlyWaitS;
 }
 
 function nearestNeighborOrder(n, durations) {
-  const remaining = []; for (let i = 1; i <= n; i++) remaining.push(i);
+  const nodeList = []; for (let i = 1; i <= n; i++) nodeList.push(i);
+  return nearestNeighborOrderSubset(nodeList, durations);
+}
+
+// nodeList(특정 노드들만)로 한정해서 nearest-neighbor 순서를 짬. 출발지(0)부터 시작.
+function nearestNeighborOrderSubset(nodeList, durations) {
+  const remaining = nodeList.slice();
   const order = []; let prev = 0;
   while (remaining.length) {
     let bestIdx = 0, bestVal = Infinity;
@@ -86,19 +94,31 @@ function nearestNeighborOrder(n, durations) {
   return order;
 }
 
+// skeleton(이미 정해진 순서) 안의 가장 좋은 자리 하나에 node를 끼워 넣는다.
+// (skeleton 자체의 순서는 절대 흐트러뜨리지 않고, node를 넣을 위치만 고름 → 지그재그 방지)
+function bestInsertion(skeleton, node, durations, distances, openSecs, departSec, dwellSec, returnToStart) {
+  let bestPos = 0, bestCost = Infinity;
+  for (let k = 0; k <= skeleton.length; k++) {
+    const cand = skeleton.slice(0, k).concat([node]).concat(skeleton.slice(k));
+    const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart);
+    if (cost < bestCost - 1e-9) { bestCost = cost; bestPos = k; }
+  }
+  return skeleton.slice(0, bestPos).concat([node]).concat(skeleton.slice(bestPos));
+}
+
 // 2-opt(구간 뒤집기) + or-opt(한 곳 위치 옮기기) 지역 탐색으로,
 // scheduleCost(=총 소요시간 + 낭비성 대기 페널티)가 최소가 되는 순서를 찾음.
 // 배달처 10~20곳 규모면 충분히 빠름.
-function localSearchMinFinish(initialOrder, durations, distances, openSecs, departSec, dwellSec, returnToStart, lambda) {
+function localSearchMinFinish(initialOrder, durations, distances, openSecs, departSec, dwellSec, returnToStart) {
   let order = initialOrder.slice();
-  let bestCost = scheduleCost(order, durations, distances, openSecs, departSec, dwellSec, returnToStart, lambda);
+  let bestCost = scheduleCost(order, durations, distances, openSecs, departSec, dwellSec, returnToStart);
   let improved = true, iter = 0;
   while (improved && iter < 60) {
     improved = false; iter++;
     for (let i = 0; i < order.length - 1; i++) {
       for (let j = i + 1; j < order.length; j++) {
         const cand = order.slice(0, i).concat(order.slice(i, j + 1).reverse()).concat(order.slice(j + 1));
-        const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart, lambda);
+        const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart);
         if (cost < bestCost - 1e-6) { order = cand; bestCost = cost; improved = true; }
       }
     }
@@ -107,7 +127,7 @@ function localSearchMinFinish(initialOrder, durations, distances, openSecs, depa
       const without = order.slice(0, i).concat(order.slice(i + 1));
       for (let k = 0; k <= without.length; k++) {
         const cand = without.slice(0, k).concat([node]).concat(without.slice(k));
-        const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart, lambda);
+        const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart);
         if (cost < bestCost - 1e-6) { order = cand; bestCost = cost; improved = true; }
       }
     }
@@ -250,16 +270,28 @@ module.exports = async (req, res) => {
         const departSec = departMin * 60;
         const dwellSec = dwellMin * 60;
 
-        // 낭비성 대기(중간에 몰아서 기다리는 것) 1분당 3분어치로 무겁게 페널티를 매겨서,
-        // "웬만한 곳 다 돌고 마지막 마감시간 지점 앞에서만 여유(버퍼)를 두는" 경로를 우선하도록 함.
-        // (모든 배송이 자연스럽게 마감시간을 넘겨서 끝나 대기 자체가 필요 없다면 이 페널티는
-        //  0이 되므로, 이 경우엔 그냥 순수 최단시간 순서로 자동으로 돌아감.)
-        const LAMBDA = 3;
-        const seedA = nearestNeighborOrder(n, table.durations);
-        const seedB = seedA.slice().reverse();
-        const resA = localSearchMinFinish(seedA, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart, LAMBDA);
-        const resB = localSearchMinFinish(seedB, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart, LAMBDA);
-        const order = resA.cost <= resB.cost ? resA.order : resB.order;
+        // ---- 새 방식: "오픈시간 무시한 자연스러운 최단동선"을 뼈대로 두고,
+        //      오픈시간 있는 곳들만 그 동선 안에서 제일 시간이 맞는 자리에 끼워 넣는다.
+        // (기존처럼 전체를 통째로 다시 최적화하면, 오픈시간이 여러 곳일 때 동선이
+        //  지그재그로 심하게 틀어지는 부작용이 있었음 — 뼈대를 고정해두면 그 문제가 없음)
+        const timedNodes = [], untimedNodes = [];
+        for (let i = 1; i <= n; i++) {
+          (openSecs[i] != null ? timedNodes : untimedNodes).push(i);
+        }
+
+        // 1) 오픈시간 없는 곳들만으로 순수 최단동선 뼈대를 만듦 (거리/시간만 기준, 대기 없음)
+        let skeleton = nearestNeighborOrderSubset(untimedNodes, table.durations);
+        if (untimedNodes.length > 1) {
+          skeleton = localSearchMinFinish(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart).order;
+        }
+
+        // 2) 오픈시간 있는 곳들을 마감시간이 이른 순서대로, 뼈대 안에서 제일 나은 자리에 끼워 넣음
+        timedNodes.sort(function (a, b) { return openSecs[a] - openSecs[b]; });
+        timedNodes.forEach(function (node) {
+          skeleton = bestInsertion(skeleton, node, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart);
+        });
+
+        const order = skeleton;
         const sim = simulateSchedule(order, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart);
 
         const legs = [];
