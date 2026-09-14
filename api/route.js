@@ -26,22 +26,50 @@ async function fetchTable(points) {
 }
 
 // order: 방문할 지점들의 matrix 인덱스 배열(0=출발지 제외, 1..n). 전체 소요시간(finish)을 계산.
+// 추가로, 오픈시간이 있는 지점들 중 "경로상 가장 마지막에 방문하는 곳"에서 생기는 대기는
+// bufferWaitS(= 마감시간을 지키기 위한 안전 버퍼)로 따로 집계하고, 그 전에 다른 오픈시간
+// 지점에서 생기는 대기는 earlyWaitS(= 가급적 없애야 할 낭비성 대기)로 구분해서 집계한다.
+// 이렇게 나누는 이유: 중간에 대기가 생기면 그 뒤 일정이 조금만 늦어져도 마지막 마감시간을
+// 놓칠 위험이 커지지만, 마지막 지점 직전의 대기는 오히려 지연에 대비하는 안전 여유가 된다.
 function simulateSchedule(order, durations, distances, openSecs, departSec, dwellSec, returnToStart) {
   let cur = departSec, totalDriveS = 0, totalDist = 0, totalWaitS = 0;
   let prev = 0;
+
+  let lastTimedPos = -1;
+  for (let i = 0; i < order.length; i++) {
+    if (openSecs[order[i]] != null) lastTimedPos = i;
+  }
+
+  let earlyWaitS = 0, bufferWaitS = 0;
   for (let i = 0; i < order.length; i++) {
     const node = order[i];
     const drive = durations[prev][node];
     cur += drive; totalDriveS += drive; totalDist += distances[prev][node];
     const openSec = openSecs[node];
-    if (openSec != null && cur < openSec) { totalWaitS += (openSec - cur); cur = openSec; }
+    if (openSec != null && cur < openSec) {
+      const w = openSec - cur;
+      totalWaitS += w;
+      if (i === lastTimedPos) bufferWaitS += w; else earlyWaitS += w;
+      cur = openSec;
+    }
     cur += dwellSec;
     prev = node;
   }
   if (returnToStart) {
     cur += durations[prev][0]; totalDriveS += durations[prev][0]; totalDist += distances[prev][0];
   }
-  return { finish: cur, totalDriveS: totalDriveS, totalDist: totalDist, totalWaitS: totalWaitS };
+  return {
+    finish: cur, totalDriveS: totalDriveS, totalDist: totalDist,
+    totalWaitS: totalWaitS, earlyWaitS: earlyWaitS, bufferWaitS: bufferWaitS
+  };
+}
+
+// 안전 버퍼(마지막 마감시간 지점 직전 대기)는 그대로 두고, 그 외 낭비성 대기(earlyWaitS)에는
+// lambda배 가중치를 매겨서 지역탐색이 "중간에 몰아서 기다리는" 경로보다 "웬만한 곳 다 돌고
+// 마지막 마감시간 지점 앞에서만 여유를 두는" 경로를 선호하도록 만든다.
+function scheduleCost(order, durations, distances, openSecs, departSec, dwellSec, returnToStart, lambda) {
+  const sim = simulateSchedule(order, durations, distances, openSecs, departSec, dwellSec, returnToStart);
+  return sim.finish + (lambda || 0) * sim.earlyWaitS;
 }
 
 function nearestNeighborOrder(n, durations) {
@@ -59,17 +87,18 @@ function nearestNeighborOrder(n, durations) {
 }
 
 // 2-opt(구간 뒤집기) + or-opt(한 곳 위치 옮기기) 지역 탐색으로,
-// "전체 소요시간(운전+대기)"이 최소가 되는 순서를 찾음. 배달처 10~20곳 규모면 충분히 빠름.
-function localSearchMinFinish(initialOrder, durations, distances, openSecs, departSec, dwellSec, returnToStart) {
+// scheduleCost(=총 소요시간 + 낭비성 대기 페널티)가 최소가 되는 순서를 찾음.
+// 배달처 10~20곳 규모면 충분히 빠름.
+function localSearchMinFinish(initialOrder, durations, distances, openSecs, departSec, dwellSec, returnToStart, lambda) {
   let order = initialOrder.slice();
-  let bestCost = simulateSchedule(order, durations, distances, openSecs, departSec, dwellSec, returnToStart).finish;
+  let bestCost = scheduleCost(order, durations, distances, openSecs, departSec, dwellSec, returnToStart, lambda);
   let improved = true, iter = 0;
   while (improved && iter < 60) {
     improved = false; iter++;
     for (let i = 0; i < order.length - 1; i++) {
       for (let j = i + 1; j < order.length; j++) {
         const cand = order.slice(0, i).concat(order.slice(i, j + 1).reverse()).concat(order.slice(j + 1));
-        const cost = simulateSchedule(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart).finish;
+        const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart, lambda);
         if (cost < bestCost - 1e-6) { order = cand; bestCost = cost; improved = true; }
       }
     }
@@ -78,12 +107,12 @@ function localSearchMinFinish(initialOrder, durations, distances, openSecs, depa
       const without = order.slice(0, i).concat(order.slice(i + 1));
       for (let k = 0; k <= without.length; k++) {
         const cand = without.slice(0, k).concat([node]).concat(without.slice(k));
-        const cost = simulateSchedule(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart).finish;
+        const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart, lambda);
         if (cost < bestCost - 1e-6) { order = cand; bestCost = cost; improved = true; }
       }
     }
   }
-  return order;
+  return { order: order, cost: bestCost };
 }
 
 module.exports = async (req, res) => {
@@ -221,8 +250,16 @@ module.exports = async (req, res) => {
         const departSec = departMin * 60;
         const dwellSec = dwellMin * 60;
 
-        const initial = nearestNeighborOrder(n, table.durations);
-        const order = localSearchMinFinish(initial, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart);
+        // 낭비성 대기(중간에 몰아서 기다리는 것) 1분당 3분어치로 무겁게 페널티를 매겨서,
+        // "웬만한 곳 다 돌고 마지막 마감시간 지점 앞에서만 여유(버퍼)를 두는" 경로를 우선하도록 함.
+        // (모든 배송이 자연스럽게 마감시간을 넘겨서 끝나 대기 자체가 필요 없다면 이 페널티는
+        //  0이 되므로, 이 경우엔 그냥 순수 최단시간 순서로 자동으로 돌아감.)
+        const LAMBDA = 3;
+        const seedA = nearestNeighborOrder(n, table.durations);
+        const seedB = seedA.slice().reverse();
+        const resA = localSearchMinFinish(seedA, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart, LAMBDA);
+        const resB = localSearchMinFinish(seedB, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart, LAMBDA);
+        const order = resA.cost <= resB.cost ? resA.order : resB.order;
         const sim = simulateSchedule(order, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart);
 
         const legs = [];
