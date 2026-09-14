@@ -161,9 +161,9 @@
         <input type="radio" name="navPref" id="navPrefTmap" value="tmap" style="width:16px;height:16px;accent-color:var(--accent);">
         티맵
       </label>
-      <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
-        <input type="radio" name="navPref" id="navPrefKakao" value="kakao" style="width:16px;height:16px;accent-color:var(--accent);">
-        카카오내비
+      <label style="display:flex; align-items:center; gap:6px; font-size:13.5px; opacity:.55;">
+        <input type="radio" name="navPref" id="navPrefKakao" value="kakao" disabled style="width:16px;height:16px;accent-color:var(--accent);">
+        카카오내비 (준비중)
       </label>
     </div>
   </div>
@@ -304,7 +304,11 @@
   todayEl.textContent = new Intl.DateTimeFormat('ko-KR', { month:'long', day:'numeric', weekday:'short' }).format(new Date());
 
   // ---------- 길찾기 앱 설정(티맵 / 카카오내비) ----------
+  // 카카오내비 SDK는 "비즈 앱" 전환(사업자등록 등) 승인이 나야 정상 동작함 — 아직 준비중이라
+  // 이 플래그를 false로 막아두고, true로 바뀌면 라디오 버튼의 disabled도 같이 풀어주면 됨.
+  var KAKAO_NAVI_READY = false;
   function getNavPref(){
+    if (!KAKAO_NAVI_READY) return 'tmap';
     try { return localStorage.getItem(NAV_PREF_KEY) === 'kakao' ? 'kakao' : 'tmap'; }
     catch (e) { return 'tmap'; }
   }
