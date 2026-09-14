@@ -8,6 +8,12 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.3/kakao.min.js" crossorigin="anonymous"></script>
+<script>
+  // 카카오내비(Kakao.Navi) 호출에 필요한 인증. JavaScript 키는 카카오 디벨로퍼스 앱의
+  // "앱 키 > JavaScript 키"에서 확인, 이 도메인이 "플랫폼 > Web"에 등록돼 있어야 동작함.
+  try { Kakao.init('3af73fcb54f5e7ba98b90f5e46c9396b'); } catch (e) {}
+</script>
 <style>
   :root{
     --bg:#F5F2EA; --surface:#FFFFFF; --surface-2:#ECE6D6; --ink:#1B211D; --ink-soft:#63695F;
@@ -368,18 +374,36 @@
     return 'tmap://route?' + params.join('&');
   }
 
-  // 카카오내비: 목적지만 지정하는 길찾기(현재 위치에서 출발). 카카오내비는 티맵과 달리
-  // "경유지 여러 곳"을 URL로 한 번에 넘기는 기능이 없어서, 한 곳씩 순서대로 여는 방식으로 씀.
-  function kakaoNaviSingleLink(from, dest){
-    return 'kakaonavi://navigate?name=' + encodeURIComponent(dest.name) +
-      '&x=' + dest.lng + '&y=' + dest.lat + '&coord_type=wgs84';
+  // 카카오내비: kakaonavi:// 링크를 그냥 열면 "인증 실패"가 나서, 카카오 JavaScript SDK(Kakao.Navi)로
+  // 호출해야 함(Kakao.init()에 등록해둔 JS 키로 인증됨). 경유지는 최대 3곳까지 지원(목적지 포함 4곳).
+  function kakaoNaviReady(){
+    if (window.Kakao && Kakao.Navi && Kakao.isInitialized && Kakao.isInitialized()) return true;
+    toast('카카오내비 연동이 아직 준비되지 않았어요. 새로고침 후 다시 시도해주세요.');
+    return false;
+  }
+  function kakaoNaviStartSingle(from, dest){
+    if (!kakaoNaviReady()) return;
+    var opts = { name: dest.name, x: dest.lng, y: dest.lat, coordType: 'wgs84' };
+    if (from && typeof from.lng === 'number' && typeof from.lat === 'number') { opts.sX = from.lng; opts.sY = from.lat; }
+    Kakao.Navi.start(opts);
+  }
+  function kakaoNaviStartGroup(legStops){
+    if (!kakaoNaviReady()) return;
+    var from = legStops[0], dests = legStops.slice(1);
+    if (!dests.length) return;
+    var goal = dests[dests.length-1], vias = dests.slice(0, dests.length-1);
+    var opts = { name: goal.name, x: goal.lng, y: goal.lat, coordType: 'wgs84' };
+    if (from && typeof from.lng === 'number' && typeof from.lat === 'number') { opts.sX = from.lng; opts.sY = from.lat; }
+    if (vias.length) opts.viaPoints = vias.map(function(v){ return { name: v.name, x: v.lng, y: v.lat }; });
+    Kakao.Navi.start(opts);
   }
   function kakaoNaviSearchLink(q){ return 'kakaomap://search?q=' + encodeURIComponent(q); }
 
-  // 지금 설정된 길찾기 앱(티맵/카카오내비) 기준으로 링크를 만들어줌.
-  // 카카오내비는 좌표 목적지 링크만 지원하므로, from(출발지 지정)은 무시하고 목적지 기준으로 안내함.
-  function navSingleLink(from, dest){
-    return getNavPref() === 'kakao' ? kakaoNaviSingleLink(from, dest) : singleTmapLink(from, dest);
+  // 지금 설정된 길찾기 앱(티맵/카카오내비) 기준으로 목적지 하나로 이동. 카카오내비는 SDK 호출이라
+  // <a href>가 아니라 클릭 시 이 함수를 직접 불러서 실행해야 함.
+  function openNavSingle(from, dest){
+    if (getNavPref() === 'kakao') kakaoNaviStartSingle(from, dest);
+    else window.location.href = singleTmapLink(from, dest);
   }
   function navSearchLink(q){
     return getNavPref() === 'kakao' ? kakaoNaviSearchLink(q) : tmapSearchLink(q);
@@ -604,7 +628,7 @@
         ? ('이전 지점에서 실제 주행 ' + fmtKm(entry.leg.distanceM) + ' (' + fmtMin(entry.leg.durationS) + ') · 예상 도착 ' + fmtHHMM(entry.arrivalMin))
         : '경로 정보 없음';
       var actionLink = hasCoords(loc)
-        ? '<a href="' + navSingleLink(prev, loc) + '">이 배달처만 ' + navAppLabel() + ' 길찾기 →</a>'
+        ? '<a href="#" data-navstop="' + i + '">이 배달처만 ' + navAppLabel() + ' 길찾기 →</a>'
         : '<a href="' + navSearchLink(loc.address||loc.name) + '">' + navAppLabel() + '에서 주소 검색하기 →</a>';
       var notesHtml = '';
       if (loc.keyLoc) notesHtml += '<div><b>열쇠</b> ' + escapeHtml(loc.keyLoc) + '</div>';
@@ -635,6 +659,14 @@
       prev = loc;
     });
 
+    list.querySelectorAll('[data-navstop]').forEach(function(a){
+      a.addEventListener('click', function(e){
+        e.preventDefault();
+        var idx = parseInt(this.dataset.navstop, 10);
+        var prevLoc = idx === 0 ? start : schedule[idx-1].loc;
+        openNavSingle(prevLoc, schedule[idx].loc);
+      });
+    });
     list.querySelectorAll('[data-up]').forEach(function(b){ b.addEventListener('click', function(){ moveStop(parseInt(this.dataset.up,10), -1); }); });
     list.querySelectorAll('[data-down]').forEach(function(b){ b.addEventListener('click', function(){ moveStop(parseInt(this.dataset.down,10), 1); }); });
     list.querySelectorAll('[data-toend]').forEach(function(b){ b.addEventListener('click', function(){ moveStopToEnd(parseInt(this.dataset.toend,10)); }); });
@@ -652,29 +684,38 @@
       '출발 ' + fmtHHMM(departMin) + ' (' + start.name + ') · 총 ' + seq.length + '곳 (남은 ' + remaining + '곳) · 실제 도로거리 약 ' + fmtKm(totalDist) + ' · 예상 주행시간 ' + fmtMin(totalDur) +
       (lateCount ? ' · ⏰ 오픈시간 대기 ' + lateCount + '곳' : '');
 
-    // 경유지 한번에 여러 곳 넘기기는 티맵만 지원함(카카오내비는 목적지 1곳만 되는 방식이라
-    // 위의 "다음 목적지" 버튼이나 각 지점별 "이 배달처만 길찾기" 링크로 한 곳씩 여는 게 맞음).
+    // 경유지 여러 곳을 한 번에 넘기는 개수 제한이 앱마다 달라서(티맵 5곳, 카카오내비 3곳),
+    // 그 개수 단위로 구간을 나눠서 버튼/링크를 만들어줌.
     var groupsEl = document.getElementById('legGroups'); groupsEl.innerHTML = '';
     var legHintEl = document.getElementById('legGroupsHint');
-    if (getNavPref() === 'kakao') {
-      legHintEl.textContent = '카카오내비는 경유지를 한 번에 여러 곳 넘길 수 없어서, 위 목록에서 각 지점의 "이 배달처만 카카오내비 길찾기" 버튼으로 한 곳씩 여시면 돼요.';
-    } else {
-      legHintEl.textContent = '티맵 앱은 경유지를 최대 5곳까지 받을 수 있어, 구간을 나눠 열어드립니다.';
-      var withCoordSeq = seq.filter(hasCoords);
-      var chunkSize = 6, cursor = start;
-      for (var gi=0; gi<withCoordSeq.length; gi+=chunkSize){
-        var chunk = withCoordSeq.slice(gi, gi+chunkSize);
-        var legStops = [cursor].concat(chunk);
+    var withCoordSeq = seq.filter(hasCoords);
+    var isKakao = getNavPref() === 'kakao';
+    var chunkSize = isKakao ? 4 : 6; // 카카오내비: 경유지3+목적지1, 티맵: 경유지5+목적지1
+    legHintEl.textContent = isKakao
+      ? '카카오내비는 경유지를 최대 3곳까지 받을 수 있어, 구간을 나눠 열어드립니다.'
+      : '티맵 앱은 경유지를 최대 5곳까지 받을 수 있어, 구간을 나눠 열어드립니다.';
+    var cursor = start;
+    for (var gi=0; gi<withCoordSeq.length; gi+=chunkSize){
+      var chunk = withCoordSeq.slice(gi, gi+chunkSize);
+      var legStops = [cursor].concat(chunk);
+      var fromLabel = cursor===start ? start.name : cursor.name;
+      var g = document.createElement('div');
+      g.className = 'leg-group';
+      if (isKakao) {
+        g.innerHTML = '<span>' + (gi+1) + '번 ~ ' + (gi+chunk.length) + '번 (' + escapeHtml(fromLabel) + ' 출발)</span>' +
+          '<a class="tmap-link" href="#" data-navgroup="' + gi + '">카카오내비로 열기 →</a>';
+        groupsEl.appendChild(g);
+        (function(stops){
+          g.querySelector('[data-navgroup]').addEventListener('click', function(e){ e.preventDefault(); kakaoNaviStartGroup(stops); });
+        })(legStops);
+      } else {
         var link = tmapMultiLink(legStops);
         if (!link) continue;
-        var g = document.createElement('div');
-        g.className = 'leg-group';
-        var fromLabel = cursor===start ? start.name : cursor.name;
         g.innerHTML = '<span>' + (gi+1) + '번 ~ ' + (gi+chunk.length) + '번 (' + escapeHtml(fromLabel) + ' 출발)</span>' +
           '<a class="tmap-link" href="' + link + '">티맵으로 열기 →</a>';
         groupsEl.appendChild(g);
-        cursor = chunk[chunk.length-1];
       }
+      cursor = chunk[chunk.length-1];
     }
   }
 
@@ -1012,8 +1053,8 @@
     if (idx === -1){ toast('오늘 배송을 모두 완료하셨습니다! 🎉'); return; }
     var prev = idx===0 ? start : seq[idx-1];
     var loc = seq[idx];
-    var link = hasCoords(loc) ? navSingleLink(prev, loc) : navSearchLink(loc.address||loc.name);
-    window.location.href = link;
+    if (hasCoords(loc)) openNavSingle(prev, loc);
+    else window.location.href = navSearchLink(loc.address||loc.name);
   }
   document.getElementById('nextStopBtn').addEventListener('click', goToNextStop);
 
