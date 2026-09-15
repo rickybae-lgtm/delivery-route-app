@@ -229,7 +229,6 @@
     <div id="routeContent" style="display:none; flex-direction:column; gap:14px;">
       <div class="hint" id="routeSummary"></div>
       <div class="btn-row">
-        <button class="btn-primary" id="nextStopBtn" type="button">▶ 다음 배달처 티맵으로 열기</button>
         <button class="btn-ghost btn-sm" id="resetDoneBtn" type="button">완료 표시 초기화</button>
         <button class="btn-ghost btn-sm" id="reoptBtn" type="button">🔄 전체 다시 최적화</button>
         <button class="btn-ghost btn-sm" id="showMapBtn" type="button">🗺️ 지도로 보기</button>
@@ -380,6 +379,27 @@
     catch (e) { toast('저장 공간이 가득 찼거나 저장에 실패했어요.'); }
   }
 
+  // 계산된 오늘의 방문 순서(state.order)는 기기에 저장해뒀다가, 티맵 켰다 돌아오거나
+  // 탭을 오래 안 보고 있다가 브라우저가 페이지를 새로고침해도(=state가 통째로 사라져도)
+  // 오늘 날짜가 같으면 그대로 복원합니다. 날짜가 바뀌면(자정 넘어가면) 무시하고 새로 계산하게 함.
+  var ORDER_KEY = 'deliveryRoute.order.v1';
+  function todayStr(){ return new Date().toDateString(); }
+  function saveOrder(){
+    try {
+      if (state.order) localStorage.setItem(ORDER_KEY, JSON.stringify({ date: todayStr(), order: state.order }));
+      else localStorage.removeItem(ORDER_KEY);
+    } catch (e) {}
+  }
+  function loadOrder(){
+    try {
+      var raw = localStorage.getItem(ORDER_KEY);
+      if (!raw) return null;
+      var v = JSON.parse(raw);
+      if (!v || v.date !== todayStr() || !v.order) return null;
+      return v.order;
+    } catch (e) { return null; }
+  }
+
   // 출발지/도착지는 매일 바뀌는 게 아니라 한 번 정하면 계속 쓰는 값이라, 3번 "업체 목록"에서
   // 지정하면 기기에 저장해두고 다음에 앱을 열어도 그대로 유지합니다.
   function loadStartEnd(){
@@ -411,7 +431,8 @@
   function fmtKm(m){ var km = m/1000; return km < 1 ? Math.round(m) + 'm' : km.toFixed(1) + 'km'; }
   function fmtMin(s){ return Math.round(s/60) + '분'; }
   function parseHHMM(s){ if (!s) return null; var m = /^(\d{1,2}):(\d{2})/.exec(s); return m ? parseInt(m[1],10)*60+parseInt(m[2],10) : null; }
-  function fmtHHMM(mins){ mins = ((mins % 1440) + 1440) % 1440; var h = Math.floor(mins/60), m = Math.round(mins%60); return (h<10?'0':'')+h+':'+(m<10?'0':'')+m; }
+  // 분 단위를 반올림한 뒤(예: 4:59.6 -> 5:00) 시/분을 나누므로, "4시60분" 같은 표기가 나올 수 없음.
+  function fmtHHMM(mins){ mins = Math.round(mins); mins = ((mins % 1440) + 1440) % 1440; var h = Math.floor(mins/60), m = mins%60; return (h<10?'0':'')+h+':'+(m<10?'0':'')+m; }
 
   function tmapSearchLink(q){ return 'tmap://search?name=' + encodeURIComponent(q); }
   function googleMapsSearchLink(q){ return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q); }
@@ -711,10 +732,35 @@
     else if (!state.order && hasDot) hasDot.remove();
   }
 
+  // "도착 완료" 체크할 때마다, 다음 배송지로(또는 마지막이었으면 복귀/도착지로) 바로
+  // 안내할지 물어봄. 확인 누르면 그 자리에서 바로 내비가 켜짐.
+  function promptNextAfterDone(){
+    if (!state.order) return;
+    var completed2 = state.order.completed || {};
+    var seq2 = state.order.seq;
+    var nextIdx = seq2.findIndex(function(l){ return !completed2[l.id]; });
+    if (nextIdx !== -1){
+      var nextLoc = seq2[nextIdx];
+      if (confirm('다음 배송지(' + nextLoc.name + ')로 안내할까요?')){
+        var prevLoc = nextIdx === 0 ? state.order.start : seq2[nextIdx - 1];
+        if (hasCoords(nextLoc)) openNavSingle(prevLoc, nextLoc);
+        else window.location.href = navSearchLink(nextLoc.address || nextLoc.name);
+      }
+    } else {
+      var endLoc = state.order.end || state.order.start;
+      if (confirm('오늘도 수고하셨습니다. ' + endLoc.name + '으로 복귀할까요?')){
+        var lastLoc = seq2.length ? seq2[seq2.length - 1] : state.order.start;
+        if (hasCoords(endLoc)) openNavSingle(lastLoc, endLoc);
+        else window.location.href = navSearchLink(endLoc.address || endLoc.name);
+      }
+    }
+  }
+
   function renderRoute(){
     var emptyMsg = document.getElementById('routeEmptyMsg');
     var content = document.getElementById('routeContent');
     updateRouteTabBadge();
+    saveOrder();
     if (!state.order){ emptyMsg.style.display='block'; content.style.display='none'; return; }
     emptyMsg.style.display='none';
     content.style.display='flex';
@@ -819,8 +865,10 @@
       b.addEventListener('change', function(){
         var idx = parseInt(this.dataset.done,10);
         var loc = schedule[idx].loc;
-        if (this.checked) completed[loc.id] = true; else delete completed[loc.id];
+        var justCompleted = this.checked;
+        if (justCompleted) completed[loc.id] = true; else delete completed[loc.id];
         renderRoute();
+        if (justCompleted) promptNextAfterDone();
       });
     });
 
@@ -1223,24 +1271,6 @@
       L.marker([endLoc.lat, endLoc.lng], { icon:endIcon }).addTo(mapLayerGroup).bindPopup('도착지: ' + escapeHtml(endLoc.name));
     }
     map.fitBounds(L.latLngBounds(latlngs), { padding:[30,30] });
-
-    if (!seq.length) return;
-    var geomBody = {
-      fixedOrder: true, returnToStart: true, geometry: true,
-      start: { lat:start.lat, lng:start.lng },
-      stops: seq.map(function(s){ return { lat:s.lat, lng:s.lng }; })
-    };
-    if (endLoc) geomBody.end = { lat:endLoc.lat, lng:endLoc.lng };
-    fetch('/api/route', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(geomBody)
-    }).then(function(r){ return r.json(); }).then(function(d){
-      if (d && d.geometry && d.geometry.length){
-        var poly = d.geometry.map(function(c){ return [c[1], c[0]]; });
-        var line = L.polyline(poly, { color:'#3b82f6', weight:4, opacity:0.85 }).addTo(mapLayerGroup);
-        map.fitBounds(line.getBounds(), { padding:[30,30] });
-      }
-    }).catch(function(){ /* 경로선 없이도 마커는 이미 보이니 조용히 무시 */ });
   }
 
   document.getElementById('showMapBtn').addEventListener('click', showRouteOnMap);
@@ -1248,25 +1278,11 @@
     document.getElementById('mapModal').style.display = 'none';
   });
 
-  function goToNextStop(){
-    if (!state.order) return;
-    var start = state.order.start, seq = state.order.seq;
-    var completed = state.order.completed || {};
-    var idx = seq.findIndex(function(loc){ return !completed[loc.id]; });
-    if (idx === -1){ toast('오늘 배송을 모두 완료하셨습니다! 🎉'); return; }
-    var prev = idx===0 ? start : seq[idx-1];
-    var loc = seq[idx];
-    if (hasCoords(loc)) openNavSingle(prev, loc);
-    else window.location.href = navSearchLink(loc.address||loc.name);
-  }
-  document.getElementById('nextStopBtn').addEventListener('click', goToNextStop);
-
   // ---------- 길찾기 앱 설정 UI ----------
   function applyNavPrefUI(){
     var pref = getNavPref();
     document.getElementById('navPrefTmap').checked = (pref === 'tmap');
     document.getElementById('navPrefKakao').checked = (pref === 'kakao');
-    document.getElementById('nextStopBtn').textContent = '▶ 다음 배달처 ' + navAppLabel() + '으로 열기';
   }
   document.getElementById('navPrefTmap').addEventListener('change', function(){
     if (this.checked) { setNavPref('tmap'); applyNavPrefUI(); if (state.order) renderRoute(); renderLocGrid(); }
@@ -1306,6 +1322,7 @@
 
   state.locations = loadLocations();
   loadStartEnd();
+  state.order = loadOrder();
   renderAll();
   renderRoute();
   (function initTab(){
