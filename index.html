@@ -55,10 +55,19 @@
     padding:18px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px;
   }
   section.card > h2{ font-size:22px; display:flex; align-items:center; gap:8px; }
-  .step-no{
-    font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600; color:var(--accent-ink);
-    background:var(--accent); width:22px; height:22px; border-radius:6px; display:inline-flex;
-    align-items:center; justify-content:center; flex:none;
+
+  .tabbar{
+    position:sticky; top:0; z-index:20; display:flex; gap:6px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+    background:var(--bg); padding:8px 2px; margin:0 -16px; padding-inline:16px; border-bottom:1px solid var(--line);
+  }
+  .tab-btn{
+    flex:none; background:var(--surface); color:var(--ink-soft); border:1px solid var(--line);
+    border-radius:20px; padding:9px 14px; font-size:13.5px; font-weight:600; white-space:nowrap;
+  }
+  .tab-btn.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .tab-btn .tab-dot{
+    display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent);
+    margin-left:5px; vertical-align:middle;
   }
   .hint{ font-size:12.5px; color:var(--ink-soft); line-height:1.55; }
 
@@ -173,8 +182,15 @@
     </div>
   </div>
 
+  <div class="tabbar" id="tabbar">
+    <button type="button" class="tab-btn" data-tab="pickerCard">🚚 오늘 배송</button>
+    <button type="button" class="tab-btn" data-tab="routeCard" id="tabBtnRoute">📋 방문 순서</button>
+    <button type="button" class="tab-btn" data-tab="formCard">➕ 업체 등록</button>
+    <button type="button" class="tab-btn" data-tab="listCard">📒 업체 목록</button>
+  </div>
+
   <section class="card" id="pickerCard">
-    <h2><span class="step-no">1</span>오늘 배달처 고르기</h2>
+    <h2>오늘 배달처 고르기</h2>
     <div class="hint" id="pickerStartEnd"></div>
     <div class="hint" id="pickerHint"></div>
     <div class="hint" id="pickerCount" style="font-weight:700;"></div>
@@ -203,27 +219,30 @@
     </div>
   </section>
 
-  <section class="card" id="routeCard" style="display:none;">
-    <h2><span class="step-no">2</span>오늘의 방문 순서</h2>
-    <div class="hint" id="routeSummary"></div>
-    <div class="btn-row">
-      <button class="btn-primary" id="nextStopBtn" type="button">▶ 다음 배달처 티맵으로 열기</button>
-      <button class="btn-ghost btn-sm" id="resetDoneBtn" type="button">완료 표시 초기화</button>
-      <button class="btn-ghost btn-sm" id="reoptBtn" type="button">🔄 전체 다시 최적화</button>
-      <button class="btn-ghost btn-sm" id="showMapBtn" type="button">🗺️ 지도로 보기</button>
-    </div>
-    <div class="hint" id="routeMoveHint"></div>
-    <div class="route-list" id="routeList"></div>
-    <hr class="divider">
-    <div class="hint" id="legGroupsHint"></div>
-    <div class="leg-groups" id="legGroups"></div>
-    <div class="btn-row">
-      <button class="btn-ghost btn-sm" id="copyRouteBtn" type="button">순서 텍스트로 복사</button>
+  <section class="card" id="routeCard">
+    <h2>오늘의 방문 순서</h2>
+    <div class="empty" id="routeEmptyMsg">아직 계산된 경로가 없어요. "오늘 배송" 탭에서 배달처를 고르고 "오늘 순서 계산하기"를 눌러주세요.</div>
+    <div id="routeContent" style="display:none; flex-direction:column; gap:14px;">
+      <div class="hint" id="routeSummary"></div>
+      <div class="btn-row">
+        <button class="btn-primary" id="nextStopBtn" type="button">▶ 다음 배달처 티맵으로 열기</button>
+        <button class="btn-ghost btn-sm" id="resetDoneBtn" type="button">완료 표시 초기화</button>
+        <button class="btn-ghost btn-sm" id="reoptBtn" type="button">🔄 전체 다시 최적화</button>
+        <button class="btn-ghost btn-sm" id="showMapBtn" type="button">🗺️ 지도로 보기</button>
+      </div>
+      <div class="hint" id="routeMoveHint"></div>
+      <div class="route-list" id="routeList"></div>
+      <hr class="divider">
+      <div class="hint" id="legGroupsHint"></div>
+      <div class="leg-groups" id="legGroups"></div>
+      <div class="btn-row">
+        <button class="btn-ghost btn-sm" id="copyRouteBtn" type="button">순서 텍스트로 복사</button>
+      </div>
     </div>
   </section>
 
-  <section class="card">
-    <h2><span class="step-no">3</span>업체등록 / 수정</h2>
+  <section class="card" id="formCard">
+    <h2>업체등록 / 수정</h2>
     <div class="hint">이름과 주소만 입력하고 저장하면 자동으로 좌표를 찾아 저장합니다. 자동으로 못 찾으면 알려드리니 그때만 수동으로 넣으시면 됩니다.</div>
     <form id="locForm">
       <input type="hidden" id="editId">
@@ -278,8 +297,8 @@
     </form>
   </section>
 
-  <section class="card">
-    <h2><span class="step-no">4</span>업체 목록 <span style="font-size:13px; font-weight:600; color:var(--ink-soft);" id="locCount"></span></h2>
+  <section class="card" id="listCard">
+    <h2>업체 목록 <span style="font-size:13px; font-weight:600; color:var(--ink-soft);" id="locCount"></span></h2>
     <div class="searchbar"><input type="text" id="searchInput" placeholder="이름, 주소, 메모로 검색"></div>
     <div class="btn-row" style="margin-top:10px;">
       <button type="button" class="btn-ghost btn-sm" id="exportBtn">📤 데이터 내보내기 (파일로 저장)</button>
@@ -661,23 +680,38 @@
     return out;
   }
 
-  // 숨겨진 카드(예: 아직 순서 계산 전이라 안 보이는 "2번" 카드)는 번호를 건너뛰고,
-  // 실제로 화면에 보이는 카드들에만 1,2,3... 순서대로 번호를 다시 매겨줌.
-  function renumberSteps(){
-    var n = 0;
-    document.querySelectorAll('.wrap > .card').forEach(function(card){
-      if (card.style.display === 'none') return;
-      n++;
-      var no = card.querySelector('.step-no');
-      if (no) no.textContent = n;
+  // ---------- 탭 전환 ----------
+  var TAB_IDS = ['pickerCard', 'routeCard', 'formCard', 'listCard'];
+  function switchTab(id){
+    TAB_IDS.forEach(function(cid){
+      var el = document.getElementById(cid);
+      if (el) el.style.display = (cid === id) ? 'flex' : 'none';
     });
+    document.querySelectorAll('.tab-btn').forEach(function(btn){
+      btn.classList.toggle('active', btn.dataset.tab === id);
+    });
+    try { sessionStorage.setItem('deliveryRoute.activeTab', id); } catch (e) {}
+  }
+  document.querySelectorAll('.tab-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){ switchTab(this.dataset.tab); });
+  });
+
+  // 방문 순서가 있는지(계산됨) 여부를 탭 버튼에 점(●)으로 표시해줌.
+  function updateRouteTabBadge(){
+    var btn = document.getElementById('tabBtnRoute');
+    if (!btn) return;
+    var hasDot = btn.querySelector('.tab-dot');
+    if (state.order && !hasDot) btn.insertAdjacentHTML('beforeend', '<span class="tab-dot"></span>');
+    else if (!state.order && hasDot) hasDot.remove();
   }
 
   function renderRoute(){
-    var card = document.getElementById('routeCard');
-    if (!state.order){ card.style.display='none'; renumberSteps(); return; }
-    card.style.display='flex';
-    renumberSteps();
+    var emptyMsg = document.getElementById('routeEmptyMsg');
+    var content = document.getElementById('routeContent');
+    updateRouteTabBadge();
+    if (!state.order){ emptyMsg.style.display='block'; content.style.display='none'; return; }
+    emptyMsg.style.display='none';
+    content.style.display='flex';
     document.getElementById('routeMoveHint').textContent = state.order.manualMode
       ? '수동 배정 모드예요: 화살표(↑↓)나 "맨뒤로"로 옮긴 곳만 그 자리로 이동하고, 나머지 배달처들은 원래 순서 그대로 유지돼요(자동으로 재배치되지 않아요).'
       : '화살표(↑↓)나 "맨뒤로"로 옮긴 곳들은 그 위치에 그대로 고정되고(여러 곳을 옮기면 옮긴 곳 전부 고정), 나머지 배달처들은 고정된 지점들 사이사이에서 실제 도로거리 기준으로 자동 재배치돼요. 처음부터 완전히 새로 최적화하고 싶으면 "전체 다시 최적화"를 눌러주세요(고정도 다 풀립니다).';
@@ -888,7 +922,7 @@
     grid.querySelectorAll('[data-setend]').forEach(function(b){ b.addEventListener('click', function(){ setEnd(this.dataset.setend); }); });
   }
 
-  function renderAll(){ renderPicker(); renderLocGrid(); renumberSteps(); }
+  function renderAll(){ renderPicker(); renderLocGrid(); }
 
   // ---------- form ----------
   function startEdit(id){
@@ -908,6 +942,7 @@
     document.getElementById('f_isStart').checked = !!loc.isStart;
     document.getElementById('cancelEditBtn').style.display = 'inline-block';
     document.getElementById('saveLocBtn').textContent = '수정 저장';
+    switchTab('formCard');
     document.getElementById('locForm').scrollIntoView({ behavior:'smooth', block:'start' });
   }
   function resetForm(){
@@ -1127,7 +1162,8 @@
       var seq = res.data.order.map(function(s){ return locById(s._ref) || s; }).concat(withoutCoords);
       state.order = { start: startLoc, end: endLoc, seq: seq, legs: res.data.legs, totalDistanceM: res.data.totalDistanceM, totalDurationS: res.data.totalDurationS, completed: completed, pinnedIds: [], manualMode: calcMode === 'manual' };
       renderRoute();
-      document.getElementById('routeCard').scrollIntoView({ behavior:'smooth', block:'start' });
+      switchTab('routeCard');
+      window.scrollTo({ top:0, behavior:'smooth' });
       if (withoutCoords.length) toast('좌표 없는 ' + withoutCoords.length + '곳은 목록 맨 뒤에 순서 미정으로 추가했어요.');
       else if (hasOpenTimes) toast('오픈시간을 고려해서 순서를 최적화했어요.');
     }).catch(function(){
@@ -1265,6 +1301,12 @@
   state.locations = loadLocations();
   loadStartEnd();
   renderAll();
+  renderRoute();
+  (function initTab(){
+    var last = null;
+    try { last = sessionStorage.getItem('deliveryRoute.activeTab'); } catch (e) {}
+    switchTab(TAB_IDS.indexOf(last) !== -1 ? last : 'pickerCard');
+  })();
 })();
 </script>
 </body>
