@@ -274,8 +274,10 @@ module.exports = async (req, res) => {
         if (endTarget) {
           const seg = await optimizeBounded(lastAnchor, lastFloats, endTarget);
           segmentsOrder.push(seg.order);
-          // 마지막 leg는 출발지 복귀/도착지 leg라 특정 배달처 도착이 아니므로 스케줄에서 제외, 총합에는 포함
-          scheduleLegs.push.apply(scheduleLegs, seg.legs.slice(0, lastFloats.length));
+          // 마지막 leg는 출발지 복귀/도착지 leg라 특정 배달처 도착은 아니지만, 화면에서 마지막
+          // 도착지를 표시할 수 있도록 legs 배열 끝에는 그대로 포함시켜 둠(스케줄 매칭에서는
+          // seqOut.length개(=배달처 수)만큼만 쓰고 그 다음 하나가 이 leg가 됨).
+          scheduleLegs.push.apply(scheduleLegs, seg.legs);
           seg.legs.forEach(function (l) { totalDistanceM += l.distanceM; totalDurationS += l.durationS; });
         } else {
           const seg = await optimizeOpen(lastAnchor, lastFloats);
@@ -368,6 +370,11 @@ module.exports = async (req, res) => {
           legs.push({ distanceM: table.distances[prev][node], durationS: table.durations[prev][node] });
           prev = node;
         });
+        // endIdx가 있으면(출발지 복귀 또는 별도 도착지) 마지막 배달지→그 지점까지의 leg도
+        // 배열 맨 끝에 추가로 넣어줌(화면에서 "마지막 도착지"를 따로 표시할 수 있게).
+        if (endIdx != null) {
+          legs.push({ distanceM: table.distances[prev][endIdx], durationS: table.durations[prev][endIdx] });
+        }
         const orderedStops = order.map(function (node) { return stops[node - 1]; });
 
         return res.status(200).json({
