@@ -174,7 +174,8 @@
   </div>
 
   <section class="card" id="pickerCard">
-    <h2><span class="step-no">1</span>출발지 &amp; 오늘 배달처 고르기</h2>
+    <h2><span class="step-no">1</span>오늘 배달처 고르기</h2>
+    <div class="hint" id="pickerStartEnd"></div>
     <div class="hint" id="pickerHint"></div>
     <div class="hint" id="pickerCount" style="font-weight:700;"></div>
     <div class="stop-picker" id="stopPicker"></div>
@@ -308,6 +309,7 @@
 
   var STORAGE_KEY = 'deliveryRoute.locations.v1';
   var NAV_PREF_KEY = 'deliveryRoute.navPref.v1';
+  var START_END_KEY = 'deliveryRoute.startEnd.v1';
 
   var todayEl = document.getElementById('todayDate');
   todayEl.textContent = new Intl.DateTimeFormat('ko-KR', { month:'long', day:'numeric', weekday:'short' }).format(new Date());
@@ -335,7 +337,7 @@
   function catClass(loc){ return CAT_CLASS[loc.category] || 'ambient'; }
   var DWELL_MIN = 5;
 
-  var state = { locations: [], selected:{}, startId:null, order:null };
+  var state = { locations: [], selected:{}, startId:null, endId:null, order:null };
 
   function toast(msg){
     var t = document.getElementById('toast');
@@ -353,6 +355,31 @@
   function saveLocations(){
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.locations)); }
     catch (e) { toast('저장 공간이 가득 찼거나 저장에 실패했어요.'); }
+  }
+
+  // 출발지/도착지는 매일 바뀌는 게 아니라 한 번 정하면 계속 쓰는 값이라, 3번 "업체 목록"에서
+  // 지정하면 기기에 저장해두고 다음에 앱을 열어도 그대로 유지합니다.
+  function loadStartEnd(){
+    try {
+      var raw = localStorage.getItem(START_END_KEY);
+      var v = raw ? JSON.parse(raw) : {};
+      state.startId = v.startId || null;
+      state.endId = v.endId || null;
+    } catch (e) { state.startId = null; state.endId = null; }
+  }
+  function saveStartEnd(){
+    try { localStorage.setItem(START_END_KEY, JSON.stringify({ startId: state.startId, endId: state.endId })); }
+    catch (e) {}
+  }
+  function setStart(id){
+    state.startId = (state.startId === id) ? null : id;
+    if (state.startId) delete state.selected[state.startId];
+    saveStartEnd(); renderAll();
+  }
+  function setEnd(id){
+    state.endId = (state.endId === id) ? null : id;
+    if (state.endId) delete state.selected[state.endId];
+    saveStartEnd(); renderAll();
   }
 
   function hasCoords(loc){ return typeof loc.lat === 'number' && typeof loc.lng === 'number' && !isNaN(loc.lat) && !isNaN(loc.lng); }
@@ -428,28 +455,33 @@
   }
 
   // ---------- routing (real road distance) ----------
-  function fetchRealRoute(start, stops, fixedOrder){
+  function fetchRealRoute(start, stops, fixedOrder, end){
+    var body = {
+      start: { lat:start.lat, lng:start.lng },
+      stops: stops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }),
+      fixedOrder: !!fixedOrder, returnToStart: true
+    };
+    if (end) body.end = { lat:end.lat, lng:end.lng };
     return fetch('/api/route', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        start: { lat:start.lat, lng:start.lng },
-        stops: stops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }),
-        fixedOrder: !!fixedOrder
-      })
+      body: JSON.stringify(body)
     }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); });
   }
 
   // 선택한 배달처 중 오픈시간이 있는 곳이 있으면, 그 시간에 맞춰 도착하도록(필요하면 대기)
   // 전체 소요시간이 최소가 되는 순서를 계산. (단순 거리최적화가 아니라 오픈시간까지 감안)
-  function fetchTimeWindowRoute(start, stops, departMin){
+  // end가 있으면(도착지가 출발지와 다르면) 오픈시간과 무관하게 항상 그 지점이 마지막이 됨.
+  function fetchTimeWindowRoute(start, stops, departMin, end){
+    var body = {
+      mode: 'timeWindow',
+      start: { lat:start.lat, lng:start.lng },
+      stops: stops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id, openMin: parseHHMM(s.openTime) }; }),
+      departMin: departMin, dwellMin: DWELL_MIN, returnToStart: true
+    };
+    if (end) body.end = { lat:end.lat, lng:end.lng };
     return fetch('/api/route', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mode: 'timeWindow',
-        start: { lat:start.lat, lng:start.lng },
-        stops: stops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id, openMin: parseHHMM(s.openTime) }; }),
-        departMin: departMin, dwellMin: DWELL_MIN, returnToStart: true
-      })
+      body: JSON.stringify(body)
     }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); });
   }
 
@@ -461,7 +493,7 @@
     var seq = state.order.seq;
     var withCoords = seq.filter(hasCoords);
     if (!withCoords.length){ renderRoute(); return; }
-    fetchRealRoute(start, withCoords, true).then(function(res){
+    fetchRealRoute(start, withCoords, true, state.order.end).then(function(res){
       if (res.ok && res.data && res.data.legs){
         // withCoords 순서 그대로 legs가 오므로, seq 안에서 좌표있는 위치에만 순서대로 채워넣는다.
         var li = 0;
@@ -504,15 +536,17 @@
 
     toast('고정된 ' + pinnedStops.length + '곳을 유지하고 나머지 순서를 다시 최적화하는 중...');
 
+    var reoptBody = {
+      mode: 'pinnedMulti',
+      start: { lat:start.lat, lng:start.lng },
+      pinned: pinnedStops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }),
+      segments: segments.map(function(seg){ return seg.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }); }),
+      returnToStart: true
+    };
+    if (state.order.end) reoptBody.end = { lat:state.order.end.lat, lng:state.order.end.lng };
     fetch('/api/route', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mode: 'pinnedMulti',
-        start: { lat:start.lat, lng:start.lng },
-        pinned: pinnedStops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }),
-        segments: segments.map(function(seg){ return seg.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }); }),
-        returnToStart: true
-      })
+      body: JSON.stringify(reoptBody)
     }).then(function(r){ return r.json().then(function(d){ return { ok:r.ok, data:d }; }); })
       .then(function(res){
         if (!res.ok || !res.data || !res.data.segmentsOrder){
@@ -558,23 +592,30 @@
   function renderPicker(){
     var wrap = document.getElementById('stopPicker');
     var hint = document.getElementById('pickerHint');
+    var startEndEl = document.getElementById('pickerStartEnd');
+    var startLoc = state.startId ? locById(state.startId) : null;
+    var endLoc = state.endId ? locById(state.endId) : null;
+    if (startEndEl){
+      startEndEl.innerHTML = '출발지: <b>' + (startLoc ? escapeHtml(startLoc.name) : '미설정') + '</b> · 도착지: <b>' +
+        (endLoc ? escapeHtml(endLoc.name) : (startLoc ? escapeHtml(startLoc.name) + ' (출발지와 동일)' : '미설정')) +
+        '</b> — 아래 4번 "업체 목록"에서 바꿀 수 있어요.';
+    }
     hint.textContent = state.locations.length ? '' : '등록된 업체가 없습니다. 아래 3번 "업체등록"에서 먼저 추가해 주세요.';
     wrap.innerHTML = '';
     updatePickerCount();
     if (!state.locations.length){ wrap.innerHTML = '<div class="empty">등록된 배달처가 없습니다.</div>'; return; }
-    state.locations.forEach(function(loc){
+    var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
+    if (!pickable.length){ wrap.innerHTML = '<div class="empty">출발지/도착지로 지정된 곳 외에 배달처가 없습니다.</div>'; return; }
+    pickable.forEach(function(loc){
       var row = document.createElement('label');
-      row.className = 'pick-row' + (state.startId === loc.id ? ' is-start' : '');
+      row.className = 'pick-row';
       row.innerHTML =
-        '<input type="radio" name="startPick" data-id="' + loc.id + '" ' + (state.startId===loc.id?'checked':'') + '>' +
         '<input type="checkbox" data-sel-id="' + loc.id + '" ' + (state.selected[loc.id]?'checked':'') + '>' +
         '<span class="name">' + escapeHtml(loc.name) + '</span>' +
         '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span>' +
-        (loc.isStart ? '<span class="badge start">출발지 후보</span>' : '') +
         (!hasCoords(loc) ? '<span class="badge warn">좌표없음</span>' : '');
       wrap.appendChild(row);
     });
-    wrap.querySelectorAll('input[name="startPick"]').forEach(function(r){ r.addEventListener('change', function(){ state.startId = this.dataset.id; renderPicker(); }); });
     wrap.querySelectorAll('input[data-sel-id]').forEach(function(c){ c.addEventListener('change', function(){ if (this.checked) state.selected[this.dataset.selId]=true; else delete state.selected[this.dataset.selId]; updatePickerCount(); }); });
   }
 
@@ -712,8 +753,9 @@
     });
 
     var remaining = schedule.length - Object.keys(completed).filter(function(id){ return schedule.some(function(e){ return e.loc.id===id; }); }).length;
+    var endLabel = state.order.end ? state.order.end.name : (start.name + ' (복귀)');
     document.getElementById('routeSummary').textContent =
-      '출발 ' + fmtHHMM(departMin) + ' (' + start.name + ') · 총 ' + seq.length + '곳 (남은 ' + remaining + '곳) · 실제 도로거리 약 ' + fmtKm(totalDist) + ' · 예상 주행시간 ' + fmtMin(totalDur) +
+      '출발 ' + fmtHHMM(departMin) + ' (' + start.name + ') → 도착 ' + endLabel + ' · 총 ' + seq.length + '곳 (남은 ' + remaining + '곳) · 실제 도로거리 약 ' + fmtKm(totalDist) + ' · 예상 주행시간 ' + fmtMin(totalDur) +
       (lateCount ? ' · ⏰ 오픈시간 대기 ' + lateCount + '곳' : '');
 
     // 경유지 여러 곳을 한 번에 넘기는 개수 제한이 앱마다 달라서(티맵 5곳, 카카오내비 3곳),
@@ -790,6 +832,8 @@
         '<div class="top"><span class="name">' + escapeHtml(loc.name) + '</span></div>' +
         '<div class="addr">' + (loc.address ? escapeHtml(loc.address) : '주소 미등록') + '</div>' +
         '<div><span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span> ' +
+          (state.startId===loc.id ? '<span class="badge start">🚩 출발지</span>' : '') +
+          (state.endId===loc.id ? '<span class="badge start">🏁 도착지</span>' : '') +
           (loc.isStart ? '<span class="badge start">출발지 후보</span>' : '') +
           (!hasCoords(loc) ? '<span class="badge warn">좌표없음</span>' : '') + '</div>' +
         (loc.keyLoc ? '<div class="kv"><b>열쇠</b><span>' + escapeHtml(loc.keyLoc) + '</span></div>' : '') +
@@ -798,13 +842,18 @@
         (loc.memo ? '<div class="memo">' + escapeHtml(loc.memo) + '</div>' : '') +
         (!hasCoords(loc) ? '<div style="display:flex;gap:10px;flex-wrap:wrap;"><a href="' + navSearchLink(loc.address||loc.name) + '">' + navAppLabel() + '에서 주소 검색 →</a>' +
           '<a href="' + googleMapsSearchLink(loc.address||loc.name) + '" target="_blank">구글맵에서 좌표 찾기 →</a></div>' : '') +
-        '<div class="card-actions"><button class="btn-ghost btn-sm" data-edit="' + loc.id + '">수정</button><button class="btn-danger btn-sm" data-del="' + loc.id + '">삭제</button></div>';
+        '<div class="card-actions">' +
+          '<button class="btn-ghost btn-sm" data-setstart="' + loc.id + '">' + (state.startId===loc.id ? '🚩 출발지 해제' : '🚩 출발지로 설정') + '</button>' +
+          '<button class="btn-ghost btn-sm" data-setend="' + loc.id + '">' + (state.endId===loc.id ? '🏁 도착지 해제' : '🏁 도착지로 설정') + '</button>' +
+          '<button class="btn-ghost btn-sm" data-edit="' + loc.id + '">수정</button><button class="btn-danger btn-sm" data-del="' + loc.id + '">삭제</button></div>';
       grid.appendChild(el);
     });
     grid.querySelectorAll('[data-edit]').forEach(function(b){ b.addEventListener('click', function(){ startEdit(this.dataset.edit); }); });
     grid.querySelectorAll('[data-del]').forEach(function(b){ b.addEventListener('click', function(){ deleteLoc(this.dataset.del); }); });
     grid.querySelectorAll('[data-locup]').forEach(function(b){ b.addEventListener('click', function(){ moveLocation(this.dataset.locup, -1); }); });
     grid.querySelectorAll('[data-locdown]').forEach(function(b){ b.addEventListener('click', function(){ moveLocation(this.dataset.locdown, 1); }); });
+    grid.querySelectorAll('[data-setstart]').forEach(function(b){ b.addEventListener('click', function(){ setStart(this.dataset.setstart); }); });
+    grid.querySelectorAll('[data-setend]').forEach(function(b){ b.addEventListener('click', function(){ setEnd(this.dataset.setend); }); });
   }
 
   function renderAll(){ renderPicker(); renderLocGrid(); renumberSteps(); }
@@ -839,6 +888,8 @@
     state.locations = state.locations.filter(function(l){ return l.id!==id; });
     delete state.selected[id];
     if (state.startId===id) state.startId=null;
+    if (state.endId===id) state.endId=null;
+    saveStartEnd();
     saveLocations(); renderAll(); toast('삭제했습니다.');
   }
 
@@ -1006,9 +1057,19 @@
   function runCalc(btn){
     var startLoc = state.startId ? locById(state.startId) : null;
     var stops = Object.keys(state.selected).map(locById).filter(Boolean);
-    if (!startLoc){ toast('출발지를 선택해주세요 (라디오 버튼).'); return; }
+    if (!startLoc){ toast('출발지를 선택해주세요 (4번 업체 목록에서 "출발지로 설정").'); return; }
     if (!hasCoords(startLoc)){ toast('출발지에 좌표가 없어 순서를 계산할 수 없어요.'); return; }
-    stops = stops.filter(function(s){ return s.id!==startLoc.id; });
+
+    // 도착지: 따로 안 정했으면 출발지와 동일(=복귀)로 취급. 좌표가 없으면 무시하고 복귀로 처리.
+    var endLocRaw = state.endId ? locById(state.endId) : null;
+    var sameAsStart = !endLocRaw || endLocRaw.id === startLoc.id;
+    if (endLocRaw && !hasCoords(endLocRaw)){
+      toast('도착지에 좌표가 없어, 도착지 설정 없이(출발지로 복귀) 계산했어요.');
+      sameAsStart = true;
+    }
+    var endLoc = sameAsStart ? null : endLocRaw;
+
+    stops = stops.filter(function(s){ return s.id!==startLoc.id && (!endLoc || s.id!==endLoc.id); });
     var withCoords = stops.filter(hasCoords);
     var withoutCoords = stops.filter(function(s){ return !hasCoords(s); });
     if (!withCoords.length){ toast('좌표가 있는 배달처를 1곳 이상 선택해주세요.'); return; }
@@ -1023,7 +1084,7 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> ' + (hasOpenTimes ? '오픈시간까지 감안해서 계산 중...' : '실제 도로거리로 계산 중...');
 
-    var routePromise = hasOpenTimes ? fetchTimeWindowRoute(startLoc, withCoords, departMin) : fetchRealRoute(startLoc, withCoords);
+    var routePromise = hasOpenTimes ? fetchTimeWindowRoute(startLoc, withCoords, departMin, endLoc) : fetchRealRoute(startLoc, withCoords, false, endLoc);
 
     routePromise.then(function(res){
       if (!res.ok || !res.data || !res.data.order){
@@ -1032,7 +1093,7 @@
       }
       var completed = (state.order && state.order.completed) || {};
       var seq = res.data.order.map(function(s){ return locById(s._ref) || s; }).concat(withoutCoords);
-      state.order = { start: startLoc, seq: seq, legs: res.data.legs, totalDistanceM: res.data.totalDistanceM, totalDurationS: res.data.totalDurationS, completed: completed, pinnedIds: [], manualMode: calcMode === 'manual' };
+      state.order = { start: startLoc, end: endLoc, seq: seq, legs: res.data.legs, totalDistanceM: res.data.totalDistanceM, totalDurationS: res.data.totalDurationS, completed: completed, pinnedIds: [], manualMode: calcMode === 'manual' };
       renderRoute();
       document.getElementById('routeCard').scrollIntoView({ behavior:'smooth', block:'start' });
       if (withoutCoords.length) toast('좌표 없는 ' + withoutCoords.length + '곳은 목록 맨 뒤에 순서 미정으로 추가했어요.');
@@ -1154,6 +1215,7 @@
   });
 
   state.locations = loadLocations();
+  loadStartEnd();
   renderAll();
 })();
 </script>
