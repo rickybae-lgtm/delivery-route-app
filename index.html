@@ -598,9 +598,9 @@
     if (startEndEl){
       startEndEl.innerHTML = '출발지: <b>' + (startLoc ? escapeHtml(startLoc.name) : '미설정') + '</b> · 도착지: <b>' +
         (endLoc ? escapeHtml(endLoc.name) : (startLoc ? escapeHtml(startLoc.name) + ' (출발지와 동일)' : '미설정')) +
-        '</b> — 아래 4번 "업체 목록"에서 바꿀 수 있어요.';
+        '</b> — 아래 "업체 목록"에서 바꿀 수 있어요.';
     }
-    hint.textContent = state.locations.length ? '' : '등록된 업체가 없습니다. 아래 3번 "업체등록"에서 먼저 추가해 주세요.';
+    hint.textContent = state.locations.length ? '' : '등록된 업체가 없습니다. 아래 "업체등록"에서 먼저 추가해 주세요.';
     wrap.innerHTML = '';
     updatePickerCount();
     if (!state.locations.length){ wrap.innerHTML = '<div class="empty">등록된 배달처가 없습니다.</div>'; return; }
@@ -731,6 +731,38 @@
       list.appendChild(card2);
       prev = loc;
     });
+
+    // 마지막 배달처 다음, 복귀(출발지) 또는 별도로 정한 도착지까지 가는 구간을 마지막 카드로 보여줌.
+    // (legs 배열이 배달처 수보다 하나 더 많으면, 그 마지막 하나가 이 구간 정보)
+    var endLeg = (legs && legs.length > seq.length) ? legs[seq.length] : null;
+    if (endLeg) {
+      var endLoc = state.order.end || start;
+      var lastTimed = null;
+      for (var si = schedule.length - 1; si >= 0; si--) { if (schedule[si].arrivalMin != null) { lastTimed = schedule[si]; break; } }
+      var endArrivalMin = lastTimed ? (lastTimed.arrivalMin + DWELL_MIN + endLeg.durationS / 60) : null;
+      var lastCoordLoc = null;
+      for (var li = schedule.length - 1; li >= 0; li--) { if (hasCoords(schedule[li].loc)) { lastCoordLoc = schedule[li].loc; break; } }
+      var endLabel = state.order.end ? '도착지' : '복귀(출발지)';
+      var endDistLine = '이전 지점에서 실제 주행 ' + fmtKm(endLeg.distanceM) + ' (' + fmtMin(endLeg.durationS) + ')' +
+        (endArrivalMin != null ? ' · 예상 도착 ' + fmtHHMM(endArrivalMin) : '');
+      var endNavLink = hasCoords(endLoc)
+        ? '<a href="#" data-navend="1">' + navAppLabel() + ' 길찾기 →</a>'
+        : '<a href="' + navSearchLink(endLoc.address || endLoc.name) + '">' + navAppLabel() + '에서 주소 검색하기 →</a>';
+      var endCard = document.createElement('div');
+      endCard.className = 'stop-card';
+      endCard.innerHTML =
+        '<div class="order-num">🏁</div>' +
+        '<div class="stop-body">' +
+          '<div class="stop-top"><span class="stop-name">' + escapeHtml(endLoc.name) + '</span>' +
+          '<span class="badge start">' + endLabel + '</span></div>' +
+          (endLoc.address ? '<div class="stop-addr">' + escapeHtml(endLoc.address) + '</div>' : '') +
+          '<div class="leg-dist">' + endDistLine + '</div>' +
+          '<div class="stop-actions">' + endNavLink + '</div>' +
+        '</div>';
+      list.appendChild(endCard);
+      var navEndA = endCard.querySelector('[data-navend]');
+      if (navEndA) navEndA.addEventListener('click', function(e){ e.preventDefault(); openNavSingle(lastCoordLoc || start, endLoc); });
+    }
 
     list.querySelectorAll('[data-navstop]').forEach(function(a){
       a.addEventListener('click', function(e){
@@ -1057,7 +1089,7 @@
   function runCalc(btn){
     var startLoc = state.startId ? locById(state.startId) : null;
     var stops = Object.keys(state.selected).map(locById).filter(Boolean);
-    if (!startLoc){ toast('출발지를 선택해주세요 (4번 업체 목록에서 "출발지로 설정").'); return; }
+    if (!startLoc){ toast('출발지를 선택해주세요 (업체 목록에서 "출발지로 설정").'); return; }
     if (!hasCoords(startLoc)){ toast('출발지에 좌표가 없어 순서를 계산할 수 없어요.'); return; }
 
     // 도착지: 따로 안 정했으면 출발지와 동일(=복귀)로 취급. 좌표가 없으면 무시하고 복귀로 처리.
@@ -1135,24 +1167,31 @@
     if (mapLayerGroup) mapLayerGroup.remove();
     mapLayerGroup = L.layerGroup().addTo(map);
 
-    var latlngs = [[start.lat, start.lng]].concat(seq.map(function(s){ return [s.lat, s.lng]; }));
-    var startIcon = L.divIcon({ className:'', html:'<div class="map-pin-start">🏁</div>', iconSize:[26,26] });
+    var endLoc = (state.order.end && hasCoords(state.order.end)) ? state.order.end : null;
+    var latlngs = [[start.lat, start.lng]].concat(seq.map(function(s){ return [s.lat, s.lng]; })).concat(endLoc ? [[endLoc.lat, endLoc.lng]] : []);
+    var startIcon = L.divIcon({ className:'', html:'<div class="map-pin-start">🚩</div>', iconSize:[26,26] });
     L.marker([start.lat, start.lng], { icon:startIcon }).addTo(mapLayerGroup).bindPopup('출발지: ' + escapeHtml(start.name));
     seq.forEach(function(s, i){
       var numIcon = L.divIcon({ className:'', html:'<div class="map-pin-num">' + (i+1) + '</div>', iconSize:[24,24] });
       L.marker([s.lat, s.lng], { icon:numIcon }).addTo(mapLayerGroup)
         .bindPopup((i+1) + '. ' + escapeHtml(s.name) + (s.address ? '<br>' + escapeHtml(s.address) : ''));
     });
+    if (endLoc){
+      var endIcon = L.divIcon({ className:'', html:'<div class="map-pin-start">🏁</div>', iconSize:[26,26] });
+      L.marker([endLoc.lat, endLoc.lng], { icon:endIcon }).addTo(mapLayerGroup).bindPopup('도착지: ' + escapeHtml(endLoc.name));
+    }
     map.fitBounds(L.latLngBounds(latlngs), { padding:[30,30] });
 
     if (!seq.length) return;
+    var geomBody = {
+      fixedOrder: true, returnToStart: true, geometry: true,
+      start: { lat:start.lat, lng:start.lng },
+      stops: seq.map(function(s){ return { lat:s.lat, lng:s.lng }; })
+    };
+    if (endLoc) geomBody.end = { lat:endLoc.lat, lng:endLoc.lng };
     fetch('/api/route', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        fixedOrder: true, returnToStart: true, geometry: true,
-        start: { lat:start.lat, lng:start.lng },
-        stops: seq.map(function(s){ return { lat:s.lat, lng:s.lng }; })
-      })
+      body: JSON.stringify(geomBody)
     }).then(function(r){ return r.json(); }).then(function(d){
       if (d && d.geometry && d.geometry.length){
         var poly = d.geometry.map(function(c){ return [c[1], c[0]]; });
@@ -1208,6 +1247,15 @@
     schedule.forEach(function(entry, i){
       lines.push((i+1) + '. [' + (entry.arrivalMin!=null?fmtHHMM(entry.arrivalMin):'--:--') + '] ' + entry.loc.name + (entry.loc.address ? ' - ' + entry.loc.address : '') + (entry.early ? ' (⏰' + Math.round(entry.waitMin) + '분 대기)' : ''));
     });
+    var legs2 = state.order.legs;
+    if (legs2 && legs2.length > state.order.seq.length){
+      var endLoc2 = state.order.end || state.order.start;
+      var lastTimed2 = null;
+      for (var si2 = schedule.length - 1; si2 >= 0; si2--) { if (schedule[si2].arrivalMin != null) { lastTimed2 = schedule[si2]; break; } }
+      var endLeg2 = legs2[state.order.seq.length];
+      var endArr2 = lastTimed2 ? (lastTimed2.arrivalMin + DWELL_MIN + endLeg2.durationS/60) : null;
+      lines.push('[' + (endArr2!=null?fmtHHMM(endArr2):'--:--') + '] ' + endLoc2.name + (state.order.end ? ' (도착지)' : ' (복귀)'));
+    }
     var text = lines.join('\n');
     if (navigator.clipboard && navigator.clipboard.writeText){
       navigator.clipboard.writeText(text).then(function(){ toast('복사했어요.'); }, function(){ toast('복사에 실패했어요.'); });
