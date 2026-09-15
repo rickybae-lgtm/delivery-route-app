@@ -31,7 +31,11 @@ async function fetchTable(points) {
 // 지점에서 생기는 대기는 earlyWaitS(= 가급적 없애야 할 낭비성 대기)로 구분해서 집계한다.
 // 이렇게 나누는 이유: 중간에 대기가 생기면 그 뒤 일정이 조금만 늦어져도 마지막 마감시간을
 // 놓칠 위험이 커지지만, 마지막 지점 직전의 대기는 오히려 지연에 대비하는 안전 여유가 된다.
-function simulateSchedule(order, durations, distances, openSecs, departSec, dwellSec, returnToStart) {
+// endIdx: 마지막 지점에서 도착해야 할 "복귀/도착지" 노드 인덱스.
+//   null  = 마지막 배달지에서 그냥 끝(별도 복귀/도착지 없음)
+//   0     = 출발지로 복귀
+//   그 외 = 별도로 지정한 도착지 노드(예: n+1, points 배열의 마지막)
+function simulateSchedule(order, durations, distances, openSecs, departSec, dwellSec, endIdx) {
   let cur = departSec, totalDriveS = 0, totalDist = 0, totalWaitS = 0;
   let prev = 0;
 
@@ -55,8 +59,8 @@ function simulateSchedule(order, durations, distances, openSecs, departSec, dwel
     cur += dwellSec;
     prev = node;
   }
-  if (returnToStart) {
-    cur += durations[prev][0]; totalDriveS += durations[prev][0]; totalDist += distances[prev][0];
+  if (endIdx != null) {
+    cur += durations[prev][endIdx]; totalDriveS += durations[prev][endIdx]; totalDist += distances[prev][endIdx];
   }
   return {
     finish: cur, totalDriveS: totalDriveS, totalDist: totalDist,
@@ -69,8 +73,8 @@ function simulateSchedule(order, durations, distances, openSecs, departSec, dwel
 //   2순위) 총 주행거리(totalDist) — 시간이 똑같다면 왕복 지그재그처럼 괜히 더 도는 경로는 피함
 //   3순위) earlyWaitS — 시간·거리가 둘 다 같을 때만, 대기를 마지막 마감시간 지점 앞으로 몰아줌
 // 각 자릿수 차이가 절대 섞이지 않도록 자릿수를 충분히 벌려둠.
-function scheduleCost(order, durations, distances, openSecs, departSec, dwellSec, returnToStart) {
-  const sim = simulateSchedule(order, durations, distances, openSecs, departSec, dwellSec, returnToStart);
+function scheduleCost(order, durations, distances, openSecs, departSec, dwellSec, endIdx) {
+  const sim = simulateSchedule(order, durations, distances, openSecs, departSec, dwellSec, endIdx);
   return sim.finish * 1e10 + sim.totalDist * 100 + sim.earlyWaitS;
 }
 
@@ -89,10 +93,10 @@ function rawArrivalTimes(order, durations, dwellSec, departSec, openSecs) {
   });
 }
 
-function totalDistOf(order, distances, returnToStart) {
+function totalDistOf(order, distances, endIdx) {
   let d = 0, prev = 0;
   order.forEach(function (node) { d += distances[prev][node]; prev = node; });
-  if (returnToStart) d += distances[prev][0];
+  if (endIdx != null) d += distances[prev][endIdx];
   return d;
 }
 
@@ -190,6 +194,9 @@ module.exports = async (req, res) => {
   body = body || {};
 
   const returnToStart = body.returnToStart !== false;
+  // end: 출발지와 별도로 지정한 "도착지"(자택/창고/가락시장 등). 있으면 항상 이 지점이 마지막
+  // 방문지가 되며(오픈시간과 무관하게 무조건 마지막), returnToStart 값보다 우선합니다.
+  const endPt = body.end && typeof body.end.lat === 'number' && typeof body.end.lng === 'number' ? body.end : null;
 
   try {
     // ---------- mode: pinnedMulti ----------
@@ -263,10 +270,11 @@ module.exports = async (req, res) => {
         // 마지막 고정 지점 이후 구간 (마지막pin -> 나머지 -> 복귀 or 자유종료)
         const lastFloats = segments[segments.length - 1];
         const lastAnchor = pinned.length ? pinned[pinned.length - 1] : start;
-        if (returnToStart) {
-          const seg = await optimizeBounded(lastAnchor, lastFloats, start);
+        const endTarget = endPt || (returnToStart ? start : null);
+        if (endTarget) {
+          const seg = await optimizeBounded(lastAnchor, lastFloats, endTarget);
           segmentsOrder.push(seg.order);
-          // 마지막 leg는 출발지로 복귀하는 leg라 특정 배달처 도착이 아니므로 스케줄에서 제외, 총합에는 포함
+          // 마지막 leg는 출발지 복귀/도착지 leg라 특정 배달처 도착이 아니므로 스케줄에서 제외, 총합에는 포함
           scheduleLegs.push.apply(scheduleLegs, seg.legs.slice(0, lastFloats.length));
           seg.legs.forEach(function (l) { totalDistanceM += l.distanceM; totalDurationS += l.durationS; });
         } else {
@@ -305,13 +313,16 @@ module.exports = async (req, res) => {
       }
 
       try {
-        const points = [start].concat(stops);
+        const points = [start].concat(stops).concat(endPt ? [endPt] : []);
         const table = await fetchTable(points);
         const n = stops.length;
         const openSecs = [null];
         stops.forEach(function (s) { openSecs.push(typeof s.openMin === 'number' ? s.openMin * 60 : null); });
+        if (endPt) openSecs.push(null);
         const departSec = departMin * 60;
         const dwellSec = dwellMin * 60;
+        // endIdx: 0=출발지로 복귀, n+1=별도 지정한 도착지, null=복귀 없음
+        const endIdx = endPt ? (n + 1) : (returnToStart ? 0 : null);
 
         // ---- 새 방식: "오픈시간 무시한 자연스러운 최단동선"을 뼈대로 두고,
         //      오픈시간 있는 곳들만 그 동선 안에서 제일 시간이 맞는 자리에 끼워 넣는다.
@@ -325,7 +336,7 @@ module.exports = async (req, res) => {
         // 1) 오픈시간 없는 곳들만으로 순수 최단동선 뼈대를 만듦 (거리/시간만 기준, 대기 없음)
         let skeleton = nearestNeighborOrderSubset(untimedNodes, table.durations);
         if (untimedNodes.length > 1) {
-          skeleton = localSearchMinFinish(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart).order;
+          skeleton = localSearchMinFinish(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx).order;
         }
 
         // 2) 오픈시간 있는 곳들을 마감시간이 이른 순서대로, 뼈대 안에서
@@ -335,11 +346,11 @@ module.exports = async (req, res) => {
         const OPEN_BUFFER_SEC = 10 * 60;
         timedNodes.sort(function (a, b) { return openSecs[a] - openSecs[b]; });
         timedNodes.forEach(function (node) {
-          skeleton = bestInsertionBeforeOpen(skeleton, node, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart, OPEN_BUFFER_SEC);
+          skeleton = bestInsertionBeforeOpen(skeleton, node, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, OPEN_BUFFER_SEC);
         });
 
         const order = skeleton;
-        const sim = simulateSchedule(order, table.durations, table.distances, openSecs, departSec, dwellSec, returnToStart);
+        const sim = simulateSchedule(order, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx);
 
         // 혹시라도 정말 못 피한 지각이 있으면 경고용으로 표시할 수 있게 계산해둠
         const rawArr = rawArrivalTimes(order, table.durations, dwellSec, departSec, openSecs);
@@ -387,7 +398,7 @@ module.exports = async (req, res) => {
     // ---------- mode: fixedOrder ----------
     if (fixedOrder) {
       const wantGeometry = !!body.geometry;
-      const routePoints = returnToStart ? points.concat([start]) : points;
+      const routePoints = endPt ? points.concat([endPt]) : (returnToStart ? points.concat([start]) : points);
       const overviewParams = wantGeometry ? '&overview=full&geometries=geojson' : '&overview=false';
       const d = await osrmGet('https://router.project-osrm.org/route/v1/driving/' + coordStr(routePoints) +
         '?steps=false' + overviewParams);
@@ -402,19 +413,24 @@ module.exports = async (req, res) => {
     }
 
     // ---------- mode: optimize (default) ----------
-    const url = 'https://router.project-osrm.org/trip/v1/driving/' + coordStr(points) +
-      '?source=first&roundtrip=' + (returnToStart ? 'true' : 'false') + '&steps=false&overview=false';
+    // endPt가 있으면 출발지·도착지를 양끝에 고정하고(source=first&destination=last) 그 사이만
+    // 최적화합니다(roundtrip은 그 경우 의미가 없어 false로 둠).
+    const tripPoints = endPt ? points.concat([endPt]) : points;
+    const url = 'https://router.project-osrm.org/trip/v1/driving/' + coordStr(tripPoints) +
+      '?source=first' + (endPt ? '&destination=last&roundtrip=false' : ('&roundtrip=' + (returnToStart ? 'true' : 'false'))) +
+      '&steps=false&overview=false';
     const d = await osrmGet(url);
 
     if (d.code !== 'Ok') {
       return res.status(502).json({ error: 'osrm_error', detail: d.code, message: d.message || '' });
     }
 
-    // waypoints[]는 입력 순서(start=0, stops=1..n)와 매핑되고,
+    // waypoints[]는 입력 순서(start=0, stops=1..n, [있다면 도착지=n+1])와 매핑되고,
     // 각 항목의 waypoint_index가 최적 방문 순서(0=출발지)를 알려줍니다.
+    const endInputIdx = endPt ? tripPoints.length - 1 : -1;
     const ordered = d.waypoints
       .map(function (w, i) { return { inputIndex: i, tripIndex: w.waypoint_index }; })
-      .filter(function (w) { return w.inputIndex !== 0; })
+      .filter(function (w) { return w.inputIndex !== 0 && w.inputIndex !== endInputIdx; })
       .sort(function (a, b) { return a.tripIndex - b.tripIndex; })
       .map(function (w) { return stops[w.inputIndex - 1]; });
 
