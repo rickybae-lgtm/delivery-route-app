@@ -190,6 +190,10 @@
           <input type="radio" name="calcMode" id="calcModeDistanceOnly" value="distanceOnly" style="width:16px;height:16px;accent-color:var(--accent);">
           오픈시간 무시하고 순수 최단거리로 계산
         </label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
+          <input type="radio" name="calcMode" id="calcModeManual" value="manual" style="width:16px;height:16px;accent-color:var(--accent);">
+          수동으로 순서 배정 (오픈시간 고려한 순서로 먼저 배치, 이후 직접 옮긴 곳만 고정되고 나머지는 그대로 유지)
+        </label>
       </div>
     </div>
     <div class="btn-row">
@@ -207,7 +211,7 @@
       <button class="btn-ghost btn-sm" id="reoptBtn" type="button">🔄 전체 다시 최적화</button>
       <button class="btn-ghost btn-sm" id="showMapBtn" type="button">🗺️ 지도로 보기</button>
     </div>
-    <div class="hint">화살표(↑↓)나 "맨뒤로"로 옮긴 곳들은 그 위치에 그대로 고정되고(여러 곳을 옮기면 옮긴 곳 전부 고정), 나머지 배달처들은 고정된 지점들 사이사이에서 실제 도로거리 기준으로 자동 재배치돼요. 처음부터 완전히 새로 최적화하고 싶으면 "전체 다시 최적화"를 눌러주세요(고정도 다 풀립니다).</div>
+    <div class="hint" id="routeMoveHint"></div>
     <div class="route-list" id="routeList"></div>
     <hr class="divider">
     <div class="hint" id="legGroupsHint"></div>
@@ -583,12 +587,15 @@
     if (j<0 || j>=seq.length) return;
     var moving = seq[idx];
     var tmp = seq[idx]; seq[idx]=seq[j]; seq[j]=tmp;
+    // 수동 배정 모드에서는 옮긴 곳만 그 자리로 움직이고, 나머지는 절대 자동으로 재배치하지 않음.
+    if (state.order.manualMode){ recalcLegsForCurrentOrder(); return; }
     if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { recalcLegsForCurrentOrder(); }
   }
   function moveStopToEnd(idx){
     var seq = state.order.seq;
     var moving = seq[idx];
     seq.push(seq.splice(idx,1)[0]);
+    if (state.order.manualMode){ recalcLegsForCurrentOrder(); return; }
     if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { recalcLegsForCurrentOrder(); }
   }
 
@@ -613,10 +620,26 @@
     return out;
   }
 
+  // 숨겨진 카드(예: 아직 순서 계산 전이라 안 보이는 "2번" 카드)는 번호를 건너뛰고,
+  // 실제로 화면에 보이는 카드들에만 1,2,3... 순서대로 번호를 다시 매겨줌.
+  function renumberSteps(){
+    var n = 0;
+    document.querySelectorAll('.wrap > .card').forEach(function(card){
+      if (card.style.display === 'none') return;
+      n++;
+      var no = card.querySelector('.step-no');
+      if (no) no.textContent = n;
+    });
+  }
+
   function renderRoute(){
     var card = document.getElementById('routeCard');
-    if (!state.order){ card.style.display='none'; return; }
+    if (!state.order){ card.style.display='none'; renumberSteps(); return; }
     card.style.display='flex';
+    renumberSteps();
+    document.getElementById('routeMoveHint').textContent = state.order.manualMode
+      ? '수동 배정 모드예요: 화살표(↑↓)나 "맨뒤로"로 옮긴 곳만 그 자리로 이동하고, 나머지 배달처들은 원래 순서 그대로 유지돼요(자동으로 재배치되지 않아요).'
+      : '화살표(↑↓)나 "맨뒤로"로 옮긴 곳들은 그 위치에 그대로 고정되고(여러 곳을 옮기면 옮긴 곳 전부 고정), 나머지 배달처들은 고정된 지점들 사이사이에서 실제 도로거리 기준으로 자동 재배치돼요. 처음부터 완전히 새로 최적화하고 싶으면 "전체 다시 최적화"를 눌러주세요(고정도 다 풀립니다).';
     var start = state.order.start, seq = state.order.seq, legs = state.order.legs;
     var departMin = parseHHMM(document.getElementById('departTime').value) || 180;
     var schedule = estimateSchedule(departMin, seq, legs);
@@ -728,16 +751,42 @@
     }
   }
 
+  // state.locations 배열 안에서 loc을 위/아래로 한 칸 옮김(delta:-1 위, +1 아래).
+  // 이 배열 순서가 1번 "배달처 고르기" 체크박스 목록 순서로도 그대로 쓰이므로,
+  // 여기서 순서를 바꾸면 1번 목록 순서도 같이 바뀜.
+  function moveLocation(id, delta){
+    var idx = state.locations.findIndex(function(l){ return l.id === id; });
+    var j = idx + delta;
+    if (idx === -1 || j < 0 || j >= state.locations.length) return;
+    var tmp = state.locations[idx];
+    state.locations[idx] = state.locations[j];
+    state.locations[j] = tmp;
+    saveLocations();
+    renderAll();
+  }
+
   function renderLocGrid(){
     var q = (document.getElementById('searchInput').value||'').trim().toLowerCase();
     var grid = document.getElementById('locGrid'); grid.innerHTML='';
+    var isFiltered = !!q;
     var list = state.locations.filter(function(l){ return !q || (l.name+' '+(l.address||'')+' '+(l.memo||'')).toLowerCase().indexOf(q)!==-1; });
     document.getElementById('locCount').textContent = '(' + state.locations.length + '곳)';
     if (!list.length){ grid.innerHTML = '<div class="empty">검색 결과가 없습니다.</div>'; return; }
-    list.forEach(function(loc){
+    if (!isFiltered) {
+      var orderHint = document.createElement('div');
+      orderHint.className = 'hint';
+      orderHint.style.marginBottom = '2px';
+      orderHint.textContent = '아래 ▲▼로 순서를 바꾸면, 1번 "배달처 고르기" 목록에 뜨는 순서도 그대로 바뀌어요.';
+      grid.appendChild(orderHint);
+    }
+    list.forEach(function(loc, i){
       var el = document.createElement('div');
       el.className = 'loc-card';
       el.innerHTML =
+        (!isFiltered ? '<div class="move-btns" style="display:inline-flex;gap:4px;margin-bottom:6px;">' +
+          '<button class="btn-ghost btn-sm" type="button" data-locup="' + loc.id + '" ' + (i===0?'disabled':'') + '>▲</button>' +
+          '<button class="btn-ghost btn-sm" type="button" data-locdown="' + loc.id + '" ' + (i===list.length-1?'disabled':'') + '>▼</button>' +
+        '</div>' : '') +
         '<div class="top"><span class="name">' + escapeHtml(loc.name) + '</span></div>' +
         '<div class="addr">' + (loc.address ? escapeHtml(loc.address) : '주소 미등록') + '</div>' +
         '<div><span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span> ' +
@@ -754,9 +803,11 @@
     });
     grid.querySelectorAll('[data-edit]').forEach(function(b){ b.addEventListener('click', function(){ startEdit(this.dataset.edit); }); });
     grid.querySelectorAll('[data-del]').forEach(function(b){ b.addEventListener('click', function(){ deleteLoc(this.dataset.del); }); });
+    grid.querySelectorAll('[data-locup]').forEach(function(b){ b.addEventListener('click', function(){ moveLocation(this.dataset.locup, -1); }); });
+    grid.querySelectorAll('[data-locdown]').forEach(function(b){ b.addEventListener('click', function(){ moveLocation(this.dataset.locdown, 1); }); });
   }
 
-  function renderAll(){ renderPicker(); renderLocGrid(); }
+  function renderAll(){ renderPicker(); renderLocGrid(); renumberSteps(); }
 
   // ---------- form ----------
   function startEdit(id){
@@ -966,7 +1017,8 @@
     var departMin = parseHHMM(document.getElementById('departTime').value) || 180;
     var modeEl = document.querySelector('input[name="calcMode"]:checked');
     var calcMode = modeEl ? modeEl.value : 'auto';
-    var hasOpenTimes = calcMode === 'auto' && withCoords.some(function(s){ return parseHHMM(s.openTime) != null; });
+    // 수동 배정 모드도 처음 배치할 땐 "오픈시간 고려" 방식을 기본으로 씀(요청하신 대로).
+    var hasOpenTimes = (calcMode === 'auto' || calcMode === 'manual') && withCoords.some(function(s){ return parseHHMM(s.openTime) != null; });
 
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> ' + (hasOpenTimes ? '오픈시간까지 감안해서 계산 중...' : '실제 도로거리로 계산 중...');
@@ -980,7 +1032,7 @@
       }
       var completed = (state.order && state.order.completed) || {};
       var seq = res.data.order.map(function(s){ return locById(s._ref) || s; }).concat(withoutCoords);
-      state.order = { start: startLoc, seq: seq, legs: res.data.legs, totalDistanceM: res.data.totalDistanceM, totalDurationS: res.data.totalDurationS, completed: completed, pinnedIds: [] };
+      state.order = { start: startLoc, seq: seq, legs: res.data.legs, totalDistanceM: res.data.totalDistanceM, totalDurationS: res.data.totalDurationS, completed: completed, pinnedIds: [], manualMode: calcMode === 'manual' };
       renderRoute();
       document.getElementById('routeCard').scrollIntoView({ behavior:'smooth', block:'start' });
       if (withoutCoords.length) toast('좌표 없는 ' + withoutCoords.length + '곳은 목록 맨 뒤에 순서 미정으로 추가했어요.');
