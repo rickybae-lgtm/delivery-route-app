@@ -1480,9 +1480,11 @@
         toast('경로 계산에 실패했어요 (' + (res.data && res.data.error || '') + '). 잠시 후 다시 시도해주세요.');
         return;
       }
-      var completed = (state.order && state.order.completed) || {};
+      // "오늘 순서 계산하기"는 매번 새 배송 묶음을 만드는 것이므로, 예전 경로에서
+      // "도착 완료" 체크했던 기록은 새로 가져오지 않고 항상 깨끗하게 시작함.
+      // (전에 갔던 곳을 오늘 또 골랐다고 해서 자동으로 완료 처리되면 안 되므로.)
       var seq = res.data.order.map(function(s){ return locById(s._ref) || s; }).concat(withoutCoords);
-      state.order = { start: startLoc, end: endLoc, seq: seq, legs: res.data.legs, totalDistanceM: res.data.totalDistanceM, totalDurationS: res.data.totalDurationS, completed: completed, pinnedIds: [], manualMode: calcMode === 'manual' };
+      state.order = { start: startLoc, end: endLoc, seq: seq, legs: res.data.legs, totalDistanceM: res.data.totalDistanceM, totalDurationS: res.data.totalDurationS, completed: {}, pinnedIds: [], manualMode: calcMode === 'manual' };
       renderRoute();
       switchTab('routeCard');
       window.scrollTo({ top:0, behavior:'smooth' });
