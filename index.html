@@ -213,6 +213,7 @@
     <h2>금일 배송매장 선택</h2>
     <div class="hint" id="pickerStartEnd"></div>
     <div class="hint" id="pickerHint"></div>
+    <input type="text" id="pickerSearch" placeholder="🔍 상호명 검색 (한 글자씩 입력하면 바로 걸러져요)" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); font-size:14.5px; background:var(--surface); color:var(--ink); margin-bottom:2px;">
     <div id="pickerCount" style="font-weight:700; font-size:14px; color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); border-radius:8px; padding:7px 10px; display:inline-block;"></div>
     <div class="stop-picker" id="stopPicker"></div>
     <label class="field" style="max-width:180px;"><span class="lbl">오늘 출발 시각</span><input type="time" id="departTime" value="03:00"></label>
@@ -386,7 +387,7 @@
     return CAT_LABEL[loc.category] || loc.category || '해당없음';
   }
   function catClass(loc){ return CAT_CLASS[loc.category] || 'ambient'; }
-  var DWELL_MIN = 5;
+  var DWELL_MIN = 7;
 
   var state = { locations: [], selected:{}, startId:null, endId:null, order:null };
 
@@ -662,6 +663,29 @@
     countEl.textContent = text;
   }
 
+  // 체크박스 목록 부분만 그려줌(검색어에 따라 걸러진 목록). renderPicker()와
+  // 검색창 입력 이벤트 둘 다에서 재사용.
+  function renderPickerRows(pickable){
+    var wrap = document.getElementById('stopPicker');
+    var searchEl = document.getElementById('pickerSearch');
+    var qRaw = (searchEl && searchEl.value || '').trim();
+    var q = qRaw.toLowerCase();
+    var visible = q ? pickable.filter(function(loc){ return (loc.name || '').toLowerCase().indexOf(q) !== -1; }) : pickable;
+    wrap.innerHTML = '';
+    if (!pickable.length){ wrap.innerHTML = '<div class="empty">출발지/도착지로 지정된 곳 외에 배달처가 없습니다.</div>'; return; }
+    if (!visible.length){ wrap.innerHTML = '<div class="empty">"' + escapeHtml(qRaw) + '"와 일치하는 업체가 없어요.</div>'; return; }
+    visible.forEach(function(loc){
+      var row = document.createElement('label');
+      row.className = 'pick-row';
+      row.innerHTML =
+        '<input type="checkbox" data-sel-id="' + loc.id + '" ' + (state.selected[loc.id]?'checked':'') + '>' +
+        '<span class="name">' + escapeHtml(loc.name) + '</span>' +
+        '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span>' +
+        (!hasCoords(loc) ? '<span class="badge warn">좌표없음</span>' : '');
+      wrap.appendChild(row);
+    });
+    wrap.querySelectorAll('input[data-sel-id]').forEach(function(c){ c.addEventListener('change', function(){ if (this.checked) state.selected[this.dataset.selId]=true; else delete state.selected[this.dataset.selId]; updatePickerCount(); }); });
+  }
   function renderPicker(){
     var wrap = document.getElementById('stopPicker');
     var hint = document.getElementById('pickerHint');
@@ -676,23 +700,20 @@
       if (gotoLink) gotoLink.addEventListener('click', function(e){ e.preventDefault(); switchTab('listCard'); });
     }
     hint.textContent = state.locations.length ? '' : '등록된 업체가 없습니다. "업체등록" 탭에서 먼저 추가해 주세요.';
-    wrap.innerHTML = '';
     updatePickerCount();
     if (!state.locations.length){ wrap.innerHTML = '<div class="empty">등록된 배달처가 없습니다.</div>'; return; }
     var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
-    if (!pickable.length){ wrap.innerHTML = '<div class="empty">출발지/도착지로 지정된 곳 외에 배달처가 없습니다.</div>'; return; }
-    pickable.forEach(function(loc){
-      var row = document.createElement('label');
-      row.className = 'pick-row';
-      row.innerHTML =
-        '<input type="checkbox" data-sel-id="' + loc.id + '" ' + (state.selected[loc.id]?'checked':'') + '>' +
-        '<span class="name">' + escapeHtml(loc.name) + '</span>' +
-        '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span>' +
-        (!hasCoords(loc) ? '<span class="badge warn">좌표없음</span>' : '');
-      wrap.appendChild(row);
-    });
-    wrap.querySelectorAll('input[data-sel-id]').forEach(function(c){ c.addEventListener('change', function(){ if (this.checked) state.selected[this.dataset.selId]=true; else delete state.selected[this.dataset.selId]; updatePickerCount(); }); });
+    renderPickerRows(pickable);
   }
+  (function initPickerSearch(){
+    var searchEl = document.getElementById('pickerSearch');
+    if (!searchEl) return;
+    searchEl.addEventListener('input', function(){
+      // 체크박스 목록만 다시 그림(검색창 자체는 다시 안 그려서 커서/포커스 유지됨).
+      var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
+      renderPickerRows(pickable);
+    });
+  })();
 
   function pinStop(loc){
     if (!state.order.pinnedIds) state.order.pinnedIds = [];
