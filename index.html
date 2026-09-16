@@ -663,14 +663,35 @@
     countEl.textContent = text;
   }
 
+  // 한글 낱글자(자음/모음)를 다 풀어헤쳐서 비교용 문자열로 만들어줌.
+  // 예: "미나리" -> "ㅁㅣㄴㅏㄹㅣ". 이렇게 해두면 검색어가 "ㅁ" 한 글자만 쳐도(아직 글자가
+  // 완성 안 됐어도) "미나리"의 풀어헤친 문자열 안에 "ㅁ"이 들어있으니 바로 걸러지고,
+  // 이어서 "ㅣ"를 더 치면 "ㅁㅣ"가 되어 더 좁혀지는 식으로 한 자모씩 칠 때마다 검색이 진행됨.
+  var HANGUL_CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+  var HANGUL_JUNG = ['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ'];
+  var HANGUL_JONG = ['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+  function toJamoString(str){
+    var out = '';
+    for (var i = 0; i < str.length; i++){
+      var code = str.charCodeAt(i);
+      if (code >= 0xAC00 && code <= 0xD7A3){
+        var idx = code - 0xAC00;
+        out += HANGUL_CHO[Math.floor(idx / 588)] + HANGUL_JUNG[Math.floor((idx % 588) / 28)] + HANGUL_JONG[idx % 28];
+      } else {
+        out += str[i];
+      }
+    }
+    return out.toLowerCase();
+  }
+
   // 체크박스 목록 부분만 그려줌(검색어에 따라 걸러진 목록). renderPicker()와
   // 검색창 입력 이벤트 둘 다에서 재사용.
   function renderPickerRows(pickable){
     var wrap = document.getElementById('stopPicker');
     var searchEl = document.getElementById('pickerSearch');
     var qRaw = (searchEl && searchEl.value || '').trim();
-    var q = qRaw.toLowerCase();
-    var visible = q ? pickable.filter(function(loc){ return (loc.name || '').toLowerCase().indexOf(q) !== -1; }) : pickable;
+    var qJamo = toJamoString(qRaw);
+    var visible = qJamo ? pickable.filter(function(loc){ return toJamoString(loc.name || '').indexOf(qJamo) !== -1; }) : pickable;
     wrap.innerHTML = '';
     if (!pickable.length){ wrap.innerHTML = '<div class="empty">출발지/도착지로 지정된 곳 외에 배달처가 없습니다.</div>'; return; }
     if (!visible.length){ wrap.innerHTML = '<div class="empty">"' + escapeHtml(qRaw) + '"와 일치하는 업체가 없어요.</div>'; return; }
@@ -1217,10 +1238,11 @@
   }
 
   function renderLocGrid(){
-    var q = (document.getElementById('searchInput').value||'').trim().toLowerCase();
+    var qRaw = (document.getElementById('searchInput').value||'').trim();
+    var qJamo = toJamoString(qRaw);
     var grid = document.getElementById('locGrid'); grid.innerHTML='';
-    var isFiltered = !!q;
-    var list = state.locations.filter(function(l){ return !q || (l.name+' '+(l.address||'')+' '+(l.memo||'')).toLowerCase().indexOf(q)!==-1; });
+    var isFiltered = !!qJamo;
+    var list = state.locations.filter(function(l){ return !qJamo || toJamoString(l.name+' '+(l.address||'')+' '+(l.memo||'')).indexOf(qJamo)!==-1; });
     document.getElementById('locCount').textContent = '(' + state.locations.length + '곳)';
     if (!list.length){ grid.innerHTML = '<div class="empty">검색 결과가 없습니다.</div>'; return; }
     if (!isFiltered) {
