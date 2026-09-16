@@ -314,6 +314,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<input type="file" id="photoShareInput" accept="image/*" capture="environment" style="display:none;">
 
 <div id="mapModal">
   <div id="mapPanel">
@@ -732,6 +733,33 @@
     else if (!state.order && hasDot) hasDot.remove();
   }
 
+  // ---------- 사진 찍어서 카톡 보내기 ----------
+  // 카메라로 찍은 사진을, 상호명이 이미 채워진 채로 스마트폰 "공유하기" 창에 넘겨줌
+  // (그 창에서 카카오톡만 골라 보내면 됨 — 상호명 직접 타이핑 안 해도 됨).
+  var pendingPhotoShareLabel = '';
+  function startPhotoShare(label){
+    if (!(navigator.canShare && navigator.share)){
+      toast('이 브라우저에서는 사진 공유 기능이 지원되지 않아요. 카메라로 찍어서 카톡으로 직접 보내주세요.');
+      return;
+    }
+    pendingPhotoShareLabel = label;
+    document.getElementById('photoShareInput').click();
+  }
+  document.getElementById('photoShareInput').addEventListener('change', function(e){
+    var file = e.target.files && e.target.files[0];
+    this.value = '';
+    if (!file) return;
+    var shareData = { files: [file], text: pendingPhotoShareLabel };
+    if (navigator.canShare && navigator.canShare(shareData)){
+      navigator.share(shareData).catch(function(err){
+        if (err && err.name === 'AbortError') return; // 사용자가 공유창을 취소한 경우
+        toast('공유 중 오류가 발생했어요.');
+      });
+    } else {
+      toast('이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
+    }
+  });
+
   // "도착 완료" 체크할 때마다, 다음 배송지로(또는 마지막이었으면 복귀/도착지로) 바로
   // 안내할지 물어봄. 확인 누르면 그 자리에서 바로 내비가 켜짐.
   function promptNextAfterDone(){
@@ -812,7 +840,9 @@
           (loc.address ? '<div class="stop-addr">' + escapeHtml(loc.address) + '</div>' : '') +
           '<div class="leg-dist">' + distLine + '</div>' +
           (notesHtml ? '<div class="stop-notes">' + notesHtml + '</div>' : '') +
-          '<div class="stop-actions">' + actionLink + '<button class="btn-ghost btn-sm" data-toend="'+i+'" type="button">맨 뒤로 보내기</button></div>' +
+          '<div class="stop-actions">' + actionLink +
+            '<button class="btn-ghost btn-sm" data-photoshare="'+i+'" type="button">📸 사진 찍어서 카톡 보내기</button>' +
+            '<button class="btn-ghost btn-sm" data-toend="'+i+'" type="button">맨 뒤로 보내기</button></div>' +
         '</div>';
       list.appendChild(card2);
       prev = loc;
@@ -861,6 +891,12 @@
     list.querySelectorAll('[data-up]').forEach(function(b){ b.addEventListener('click', function(){ moveStop(parseInt(this.dataset.up,10), -1); }); });
     list.querySelectorAll('[data-down]').forEach(function(b){ b.addEventListener('click', function(){ moveStop(parseInt(this.dataset.down,10), 1); }); });
     list.querySelectorAll('[data-toend]').forEach(function(b){ b.addEventListener('click', function(){ moveStopToEnd(parseInt(this.dataset.toend,10)); }); });
+    list.querySelectorAll('[data-photoshare]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var idx = parseInt(this.dataset.photoshare,10);
+        startPhotoShare(schedule[idx].loc.name);
+      });
+    });
     list.querySelectorAll('[data-done]').forEach(function(b){
       b.addEventListener('change', function(){
         var idx = parseInt(this.dataset.done,10);
