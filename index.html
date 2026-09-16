@@ -1616,6 +1616,13 @@
       setTimeout(function(){ document.getElementById('lockPwInput').focus(); }, 50);
     }
   })();
+
+  // 서비스워커 등록 — 크롬이 "설치 가능한 앱"으로 인식하는 데 필요한 조건 중 하나.
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('/sw.js').catch(function(){});
+    });
+  }
 })();
 </script>
 </body>
