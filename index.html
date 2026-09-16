@@ -187,7 +187,6 @@
     <h1>경성 티에프</h1>
     <span class="date" id="todayDate"></span>
   </header>
-  <p class="lede">이름과 주소만 입력하면 자동으로 좌표를 찾고, 실제 도로 주행거리 기준으로 오늘의 방문 순서를 계산합니다. 데이터는 이 기기(브라우저)에만 저장됩니다.</p>
 
   <div class="field" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
     <span class="lbl">길찾기 앱</span>
@@ -214,7 +213,7 @@
     <h2>금일 배송매장 선택</h2>
     <div class="hint" id="pickerStartEnd"></div>
     <div class="hint" id="pickerHint"></div>
-    <input type="text" id="pickerSearch" placeholder="🔍 상호명 검색 (한 글자씩 입력하면 바로 걸러져요)" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); font-size:14.5px; background:var(--surface); color:var(--ink); margin-bottom:2px;">
+    <input type="text" id="pickerSearch" placeholder="🔍 상호명 검색" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); font-size:14.5px; background:var(--surface); color:var(--ink); margin-bottom:2px;">
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
       <div id="pickerCount" style="font-weight:700; font-size:14px; color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); border-radius:8px; padding:7px 10px; display:inline-block;"></div>
       <button type="button" class="btn-ghost btn-sm" id="pickerShowSelectedBtn">✅ 선택한 곳만 보기</button>
@@ -226,27 +225,27 @@
       <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:4px;">
         <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
           <input type="radio" name="calcMode" id="calcModeAuto" value="auto" checked style="width:16px;height:16px;accent-color:var(--accent);">
-          오픈시간 고려해서 계산 (오픈시간 있는 곳은 그 시간 맞춰 배치, 필요시 대기)
+          오픈시간 고려
         </label>
         <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
           <input type="radio" name="calcMode" id="calcModeDistanceOnly" value="distanceOnly" style="width:16px;height:16px;accent-color:var(--accent);">
-          오픈시간 무시하고 순수 최단거리로 계산
+          최단거리만
         </label>
         <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
           <input type="radio" name="calcMode" id="calcModeManual" value="manual" style="width:16px;height:16px;accent-color:var(--accent);">
-          수동으로 순서 배정 (오픈시간 고려한 순서로 먼저 배치, 이후 직접 옮긴 곳만 고정되고 나머지는 그대로 유지)
+          수동 배정
         </label>
       </div>
     </div>
     <div class="btn-row">
-      <button class="btn-primary" id="calcBtn">오늘 순서 계산하기 (실제 도로거리)</button>
+      <button class="btn-primary" id="calcBtn">오늘 순서 계산하기</button>
       <button class="btn-ghost btn-sm" id="clearPickBtn" type="button">선택 초기화</button>
     </div>
   </section>
 
   <section class="card" id="routeCard">
     <h2>금일 배송순서</h2>
-    <div class="empty" id="routeEmptyMsg">아직 계산된 경로가 없어요. "매장선택" 탭에서 배달처를 고르고 "오늘 순서 계산하기"를 눌러주세요.</div>
+    <div class="empty" id="routeEmptyMsg">아직 계산된 경로가 없어요.</div>
     <div id="routeContent" style="display:none; flex-direction:column; gap:14px;">
       <div class="hint" id="routeSummary"></div>
       <div class="btn-row">
@@ -267,7 +266,6 @@
 
   <section class="card" id="formCard">
     <h2>업체등록 / 수정</h2>
-    <div class="hint">이름과 주소만 입력하고 저장하면 자동으로 좌표를 찾아 저장합니다. 자동으로 못 찾으면 알려드리니 그때만 수동으로 넣으시면 됩니다.</div>
     <form id="locForm">
       <input type="hidden" id="editId">
       <div class="row2">
@@ -291,9 +289,8 @@
       <div class="btn-row" style="margin-top:8px;">
         <button type="button" class="btn-ghost btn-sm" id="curLocBtn">📍 현재 위치 사용 (GPS)</button>
       </div>
-      <div class="hint" style="margin-top:4px;">지금 서 계신 곳을 등록할 때 주소를 몰라도 이 버튼으로 좌표와 주소를 자동으로 채울 수 있어요. (스마트폰 위치 권한 허용 필요)</div>
       <details style="margin-top:8px;">
-        <summary style="cursor:pointer; font-size:12.5px; color:var(--ink-soft);">좌표 직접 입력 / 확인 (평소엔 안 열어보셔도 됩니다)</summary>
+        <summary style="cursor:pointer; font-size:12.5px; color:var(--ink-soft);">좌표 직접 입력</summary>
         <div class="row2" style="margin-top:8px;">
           <label class="field"><span class="lbl">위도 (lat)</span><input type="text" inputmode="decimal" id="f_lat" placeholder="자동으로 채워집니다"></label>
           <label class="field"><span class="lbl">경도 (lng)</span><input type="text" inputmode="decimal" id="f_lng" placeholder="자동으로 채워집니다"></label>
@@ -329,7 +326,6 @@
       <button type="button" class="btn-ghost btn-sm" id="importBtn">📥 다른 기기 데이터 불러오기</button>
       <input type="file" id="importFile" accept=".json,application/json,text/plain,text/json,*/*" style="display:none;">
     </div>
-    <div class="hint" style="margin-top:6px;">기기를 바꾸거나 다른 사람 것과 합칠 때, 이 기기의 업체 목록을 파일로 내려받은 뒤 새 기기에서 "불러오기"로 열면 옮길 수 있어요.</div>
     <div class="loc-grid" id="locGrid"></div>
   </section>
 </div>
@@ -716,11 +712,11 @@
     if (startEndEl){
       startEndEl.innerHTML = '출발지: <b>' + (startLoc ? escapeHtml(startLoc.name) : '미설정') + '</b> · 도착지: <b>' +
         (endLoc ? escapeHtml(endLoc.name) : (startLoc ? escapeHtml(startLoc.name) + ' (출발지와 동일)' : '미설정')) +
-        '</b> — <a href="#" id="gotoListTabLink">"업체 목록" 탭에서 바꿀 수 있어요 →</a>';
+        '</b> — <a href="#" id="gotoListTabLink">변경 →</a>';
       var gotoLink = document.getElementById('gotoListTabLink');
       if (gotoLink) gotoLink.addEventListener('click', function(e){ e.preventDefault(); switchTab('listCard'); });
     }
-    hint.textContent = state.locations.length ? '' : '등록된 업체가 없습니다. "업체등록" 탭에서 먼저 추가해 주세요.';
+    hint.textContent = state.locations.length ? '' : '업체를 먼저 등록해주세요.';
     updatePickerCount();
     if (!state.locations.length){ wrap.innerHTML = '<div class="empty">등록된 배달처가 없습니다.</div>'; return; }
     var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
@@ -988,8 +984,7 @@
       });
     });
     document.getElementById('photoShareCount').textContent = pendingPhotoShareItems.length + '장';
-    document.getElementById('photoShareName').textContent = pendingPhotoShareLabel +
-      (pendingPhotoShareItems.length > 1 ? ' — 보낼 때 한 장으로 합쳐서 상호명 새겨짐' : ' — 사진에 상호명 새겨서 준비됨');
+    document.getElementById('photoShareName').textContent = pendingPhotoShareLabel;
     document.getElementById('photoShareBar').style.display = 'flex';
     document.getElementById('photoShareSendBtn').textContent = '카톡으로 보내기';
     document.getElementById('photoShareSendBtn').disabled = false;
@@ -1080,8 +1075,8 @@
     emptyMsg.style.display='none';
     content.style.display='flex';
     document.getElementById('routeMoveHint').textContent = state.order.manualMode
-      ? '수동 배정 모드예요: 화살표(↑↓)나 "맨뒤로"로 옮긴 곳만 그 자리로 이동하고, 나머지 배달처들은 원래 순서 그대로 유지돼요(자동으로 재배치되지 않아요).'
-      : '화살표(↑↓)나 "맨뒤로"로 옮긴 곳들은 그 위치에 그대로 고정되고(여러 곳을 옮기면 옮긴 곳 전부 고정), 나머지 배달처들은 고정된 지점들 사이사이에서 실제 도로거리 기준으로 자동 재배치돼요. 처음부터 완전히 새로 최적화하고 싶으면 "전체 다시 최적화"를 눌러주세요(고정도 다 풀립니다).';
+      ? '수동 배정 모드: 옮긴 곳만 고정, 나머지는 그대로예요.'
+      : '옮긴 곳은 고정되고, 나머지는 자동으로 재배치돼요.';
     var start = state.order.start, seq = state.order.seq, legs = state.order.legs;
     var departMin = parseHHMM(document.getElementById('departTime').value) || 180;
     var schedule = estimateSchedule(departMin, seq, legs);
@@ -1198,7 +1193,7 @@
     var remaining = schedule.length - Object.keys(completed).filter(function(id){ return schedule.some(function(e){ return e.loc.id===id; }); }).length;
     var endLabel = state.order.end ? state.order.end.name : (start.name + ' (복귀)');
     document.getElementById('routeSummary').textContent =
-      '출발 ' + fmtHHMM(departMin) + ' (' + start.name + ') → 도착 ' + endLabel + ' · 총 ' + seq.length + '곳 (남은 ' + remaining + '곳) · 실제 도로거리 약 ' + fmtKm(totalDist) + ' · 예상 주행시간 ' + fmtMin(totalDur) +
+      '출발 ' + fmtHHMM(departMin) + ' (' + start.name + ') → 도착 ' + endLabel + ' · 총 ' + seq.length + '곳 (남은 ' + remaining + '곳) · 거리 약 ' + fmtKm(totalDist) + ' · 시간 약 ' + fmtMin(totalDur) +
       (lateCount ? ' · ⏰ 오픈시간 대기 ' + lateCount + '곳' : '');
 
     // 경유지 여러 곳을 한 번에 넘기는 개수 제한이 앱마다 달라서(티맵 5곳, 카카오내비 3곳),
@@ -1208,9 +1203,7 @@
     var withCoordSeq = seq.filter(hasCoords);
     var isKakao = getNavPref() === 'kakao';
     var chunkSize = isKakao ? 4 : 6; // 카카오내비: 경유지3+목적지1, 티맵: 경유지5+목적지1
-    legHintEl.textContent = isKakao
-      ? '카카오내비는 경유지를 최대 3곳까지 받을 수 있어, 구간을 나눠 열어드립니다.'
-      : '티맵 앱은 경유지를 최대 5곳까지 받을 수 있어, 구간을 나눠 열어드립니다.';
+    legHintEl.textContent = '';
     var cursor = start;
     for (var gi=0; gi<withCoordSeq.length; gi+=chunkSize){
       var chunk = withCoordSeq.slice(gi, gi+chunkSize);
@@ -1263,13 +1256,6 @@
     });
     document.getElementById('locCount').textContent = '(' + state.locations.length + '곳)';
     if (!list.length){ grid.innerHTML = '<div class="empty">검색 결과가 없습니다.</div>'; return; }
-    if (!isFiltered) {
-      var orderHint = document.createElement('div');
-      orderHint.className = 'hint';
-      orderHint.style.marginBottom = '2px';
-      orderHint.textContent = '아래 ▲▼로 순서를 바꾸면, "매장선택" 탭의 배달처 고르기 목록에 뜨는 순서도 그대로 바뀌어요.';
-      grid.appendChild(orderHint);
-    }
     list.forEach(function(loc, i){
       var el = document.createElement('div');
       el.className = 'loc-card';
@@ -1532,7 +1518,7 @@
     var hasOpenTimes = (calcMode === 'auto' || calcMode === 'manual') && withCoords.some(function(s){ return parseHHMM(s.openTime) != null; });
 
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> ' + (hasOpenTimes ? '오픈시간까지 감안해서 계산 중...' : '실제 도로거리로 계산 중...');
+    btn.innerHTML = '<span class="spinner"></span> 계산 중...';
 
     var routePromise = hasOpenTimes ? fetchTimeWindowRoute(startLoc, withCoords, departMin, endLoc) : fetchRealRoute(startLoc, withCoords, false, endLoc);
 
