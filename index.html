@@ -749,15 +749,23 @@
     var file = e.target.files && e.target.files[0];
     this.value = '';
     if (!file) return;
-    var shareData = { files: [file], text: pendingPhotoShareLabel };
-    if (navigator.canShare && navigator.canShare(shareData)){
-      navigator.share(shareData).catch(function(err){
+    var withText = { files: [file], text: pendingPhotoShareLabel };
+    var filesOnly = { files: [file] };
+    // 일부 브라우저는 files+text를 같이 넘기면 거부하는 경우가 있어서, 실패하면
+    // 상호명 텍스트 없이 사진만이라도 공유되도록 한 번 더 시도해봄.
+    function tryShare(data, isFallback){
+      if (!(navigator.canShare && navigator.canShare(data))){
+        if (!isFallback) return tryShare(filesOnly, true);
+        toast('이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
+        return;
+      }
+      navigator.share(data).catch(function(err){
         if (err && err.name === 'AbortError') return; // 사용자가 공유창을 취소한 경우
-        toast('공유 중 오류가 발생했어요.');
+        if (!isFallback) { tryShare(filesOnly, true); return; }
+        toast('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진 앱에서 직접 카톡으로 보내주세요.');
       });
-    } else {
-      toast('이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
     }
+    tryShare(withText, false);
   });
 
   // "도착 완료" 체크할 때마다, 다음 배송지로(또는 마지막이었으면 복귀/도착지로) 바로
