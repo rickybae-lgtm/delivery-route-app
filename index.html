@@ -315,11 +315,17 @@
 
 <div class="toast" id="toast"></div>
 <input type="file" id="photoShareInput" accept="image/*" capture="environment" style="display:none;">
-<div id="photoShareBar" style="display:none; position:fixed; left:0; right:0; bottom:0; z-index:60; background:var(--surface); border-top:1px solid var(--line); box-shadow:var(--shadow); padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px)); align-items:center; gap:10px;">
-  <img id="photoShareThumb" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex:none;" alt="">
-  <span id="photoShareName" style="flex:1; font-size:13.5px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
-  <button class="btn-ghost btn-sm" id="photoShareCancelBtn" type="button">취소</button>
-  <button class="btn-primary btn-sm" id="photoShareSendBtn" type="button">카톡으로 보내기</button>
+<div id="photoShareBar" style="display:none; flex-direction:column; gap:10px; position:fixed; left:0; right:0; bottom:0; z-index:60; background:var(--surface); border-top:1px solid var(--line); box-shadow:var(--shadow); padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+    <span id="photoShareName" style="font-size:13.5px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+    <span id="photoShareCount" class="hint" style="flex:none;"></span>
+  </div>
+  <div id="photoShareThumbs" style="display:flex; gap:8px; overflow-x:auto;"></div>
+  <div class="btn-row">
+    <button class="btn-ghost btn-sm" id="photoShareAddBtn" type="button">📷 +더 찍기</button>
+    <button class="btn-ghost btn-sm" id="photoShareCancelBtn" type="button" style="margin-left:auto;">취소</button>
+    <button class="btn-primary btn-sm" id="photoShareSendBtn" type="button">카톡으로 보내기</button>
+  </div>
 </div>
 
 <div id="mapModal">
@@ -748,9 +754,11 @@
   // 인식을 잃어버려서(NotAllowedError), 그 시점에 곧바로 navigator.share()를 부르면 막히는
   // 기기가 있음. 그래서 사진을 찍은 뒤 "카톡으로 보내기" 버튼을 한 번 더 보여주고,
   // 그 버튼을 누르는 순간(=진짜 방금 누른 동작)에 공유를 실행하도록 함.
+  // 물량이 많아서 사진을 2~3장 찍어야 할 때를 위해, 한 장 찍고 바로 안 보내고
+  // "+더 찍기"로 계속 담았다가 한 번에 카톡으로 같이 보낼 수 있게 함(Web Share API는
+  // 사진 여러 장을 한 번에 공유하는 것도 지원함 — 카톡에서 사진 묶음으로 한번에 전송됨).
   var pendingPhotoShareLabel = '';
-  var pendingPhotoShareFile = null;
-  var pendingPhotoShareUrl = null;
+  var pendingPhotoShareItems = []; // [{file, url}, ...]
 
   // 사진(file) 하단에 반투명 바 + 흰 글씨로 label을 새겨서 새 이미지 파일로 만들어줌.
   // (EXIF 방향 정보 때문에 사진이 옆으로 눕는 걸 막기 위해, 가능하면
@@ -801,13 +809,35 @@
       return;
     }
     pendingPhotoShareLabel = label;
+    pendingPhotoShareItems = [];
     document.getElementById('photoShareInput').click();
   }
   function closePhotoShareBar(){
     document.getElementById('photoShareBar').style.display = 'none';
-    if (pendingPhotoShareUrl) URL.revokeObjectURL(pendingPhotoShareUrl);
-    pendingPhotoShareUrl = null;
-    pendingPhotoShareFile = null;
+    pendingPhotoShareItems.forEach(function(it){ URL.revokeObjectURL(it.url); });
+    pendingPhotoShareItems = [];
+  }
+  function renderPhotoShareBar(){
+    var thumbs = document.getElementById('photoShareThumbs'); thumbs.innerHTML = '';
+    pendingPhotoShareItems.forEach(function(it, i){
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'position:relative; flex:none;';
+      wrap.innerHTML = '<img src="' + it.url + '" style="width:64px;height:64px;object-fit:cover;border-radius:8px;display:block;" alt="">' +
+        '<button type="button" data-rmphoto="' + i + '" style="position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; border:1px solid var(--line); background:var(--surface); font-size:11px; line-height:1; padding:0;">✕</button>';
+      thumbs.appendChild(wrap);
+    });
+    thumbs.querySelectorAll('[data-rmphoto]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var i = parseInt(this.dataset.rmphoto, 10);
+        URL.revokeObjectURL(pendingPhotoShareItems[i].url);
+        pendingPhotoShareItems.splice(i, 1);
+        if (!pendingPhotoShareItems.length){ closePhotoShareBar(); return; }
+        renderPhotoShareBar();
+      });
+    });
+    document.getElementById('photoShareCount').textContent = pendingPhotoShareItems.length + '장';
+    document.getElementById('photoShareName').textContent = pendingPhotoShareLabel + ' — 사진에 상호명 새겨서 준비됨';
+    document.getElementById('photoShareBar').style.display = 'flex';
   }
   document.getElementById('photoShareInput').addEventListener('change', function(e){
     var file = e.target.files && e.target.files[0];
@@ -815,27 +845,26 @@
     if (!file) return;
     var label = pendingPhotoShareLabel;
     stampPhoto(file, label).then(function(stamped){
-      if (pendingPhotoShareUrl) URL.revokeObjectURL(pendingPhotoShareUrl);
-      pendingPhotoShareFile = stamped;
-      pendingPhotoShareUrl = URL.createObjectURL(stamped);
-      document.getElementById('photoShareThumb').src = pendingPhotoShareUrl;
-      document.getElementById('photoShareName').textContent = label + ' — 사진에 상호명 새겨서 준비됨';
-      document.getElementById('photoShareBar').style.display = 'flex';
+      pendingPhotoShareItems.push({ file: stamped, url: URL.createObjectURL(stamped) });
+      renderPhotoShareBar();
     });
+  });
+  document.getElementById('photoShareAddBtn').addEventListener('click', function(){
+    document.getElementById('photoShareInput').click();
   });
   document.getElementById('photoShareCancelBtn').addEventListener('click', closePhotoShareBar);
   document.getElementById('photoShareSendBtn').addEventListener('click', function(){
-    if (!pendingPhotoShareFile) return;
-    var data = { files: [pendingPhotoShareFile] };
+    if (!pendingPhotoShareItems.length) return;
+    var data = { files: pendingPhotoShareItems.map(function(it){ return it.file; }) };
     if (!(navigator.canShare && navigator.canShare(data))){
-      toast('이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
+      toast('이 사진들은 한번에 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
       closePhotoShareBar();
       return;
     }
     navigator.share(data).then(function(){
       closePhotoShareBar();
     }).catch(function(err){
-      if (err && err.name === 'AbortError') return; // 사용자가 공유창을 취소한 경우(사진은 계속 준비된 채로 둠)
+      if (err && err.name === 'AbortError') return; // 사용자가 공유창을 취소한 경우(사진들은 계속 준비된 채로 둠)
       toast('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진 앱에서 직접 카톡으로 보내주세요.');
       closePhotoShareBar();
     });
