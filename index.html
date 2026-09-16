@@ -740,6 +740,10 @@
     if (!btn) return;
     btn.addEventListener('click', function(){
       pickerShowSelectedOnly = !pickerShowSelectedOnly;
+      // "선택한 곳만 보기"를 켤 때, 검색창에 남아있는 글자 때문에 선택한 곳이
+      // 걸러져서 하나도 안 보이는 일이 없도록 검색어를 지워줌.
+      var searchEl = document.getElementById('pickerSearch');
+      if (pickerShowSelectedOnly && searchEl) searchEl.value = '';
       var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
       renderPickerRows(pickable);
     });
