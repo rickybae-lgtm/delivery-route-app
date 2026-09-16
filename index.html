@@ -315,6 +315,12 @@
 
 <div class="toast" id="toast"></div>
 <input type="file" id="photoShareInput" accept="image/*" capture="environment" style="display:none;">
+<div id="photoShareBar" style="display:none; position:fixed; left:0; right:0; bottom:0; z-index:60; background:var(--surface); border-top:1px solid var(--line); box-shadow:var(--shadow); padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px)); align-items:center; gap:10px;">
+  <img id="photoShareThumb" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex:none;" alt="">
+  <span id="photoShareName" style="flex:1; font-size:13.5px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+  <button class="btn-ghost btn-sm" id="photoShareCancelBtn" type="button">취소</button>
+  <button class="btn-primary btn-sm" id="photoShareSendBtn" type="button">카톡으로 보내기</button>
+</div>
 
 <div id="mapModal">
   <div id="mapPanel">
@@ -736,7 +742,14 @@
   // ---------- 사진 찍어서 카톡 보내기 ----------
   // 카메라로 찍은 사진을, 상호명이 이미 채워진 채로 스마트폰 "공유하기" 창에 넘겨줌
   // (그 창에서 카카오톡만 골라 보내면 됨 — 상호명 직접 타이핑 안 해도 됨).
+  //
+  // 주의: 카메라 앱을 열었다 돌아오면 브라우저가 "방금 사용자가 직접 누른 동작"이라는
+  // 인식을 잃어버려서(NotAllowedError), 그 시점에 곧바로 navigator.share()를 부르면 막히는
+  // 기기가 있음. 그래서 사진을 찍은 뒤 "카톡으로 보내기" 버튼을 한 번 더 보여주고,
+  // 그 버튼을 누르는 순간(=진짜 방금 누른 동작)에 공유를 실행하도록 함.
   var pendingPhotoShareLabel = '';
+  var pendingPhotoShareFile = null;
+  var pendingPhotoShareUrl = null;
   function startPhotoShare(label){
     if (!(navigator.canShare && navigator.share)){
       toast('이 브라우저에서는 사진 공유 기능이 지원되지 않아요. 카메라로 찍어서 카톡으로 직접 보내주세요.');
@@ -745,11 +758,28 @@
     pendingPhotoShareLabel = label;
     document.getElementById('photoShareInput').click();
   }
+  function closePhotoShareBar(){
+    document.getElementById('photoShareBar').style.display = 'none';
+    if (pendingPhotoShareUrl) URL.revokeObjectURL(pendingPhotoShareUrl);
+    pendingPhotoShareUrl = null;
+    pendingPhotoShareFile = null;
+  }
   document.getElementById('photoShareInput').addEventListener('change', function(e){
     var file = e.target.files && e.target.files[0];
     this.value = '';
     if (!file) return;
-    var withText = { files: [file], text: pendingPhotoShareLabel };
+    if (pendingPhotoShareUrl) URL.revokeObjectURL(pendingPhotoShareUrl);
+    pendingPhotoShareFile = file;
+    pendingPhotoShareUrl = URL.createObjectURL(file);
+    document.getElementById('photoShareThumb').src = pendingPhotoShareUrl;
+    document.getElementById('photoShareName').textContent = pendingPhotoShareLabel + ' 사진 준비됨';
+    document.getElementById('photoShareBar').style.display = 'flex';
+  });
+  document.getElementById('photoShareCancelBtn').addEventListener('click', closePhotoShareBar);
+  document.getElementById('photoShareSendBtn').addEventListener('click', function(){
+    if (!pendingPhotoShareFile) return;
+    var file = pendingPhotoShareFile, label = pendingPhotoShareLabel;
+    var withText = { files: [file], text: label };
     var filesOnly = { files: [file] };
     // 일부 브라우저는 files+text를 같이 넘기면 거부하는 경우가 있어서, 실패하면
     // 상호명 텍스트 없이 사진만이라도 공유되도록 한 번 더 시도해봄.
@@ -757,12 +787,14 @@
       if (!(navigator.canShare && navigator.canShare(data))){
         if (!isFallback) return tryShare(filesOnly, true);
         toast('이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
+        closePhotoShareBar();
         return;
       }
-      navigator.share(data).catch(function(err){
-        if (err && err.name === 'AbortError') return; // 사용자가 공유창을 취소한 경우
+      navigator.share(data).then(function(){ closePhotoShareBar(); }).catch(function(err){
+        if (err && err.name === 'AbortError') return; // 사용자가 공유창을 취소한 경우(사진은 계속 준비된 채로 둠)
         if (!isFallback) { tryShare(filesOnly, true); return; }
         toast('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진 앱에서 직접 카톡으로 보내주세요.');
+        closePhotoShareBar();
       });
     }
     tryShare(withText, false);
