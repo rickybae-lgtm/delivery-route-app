@@ -763,20 +763,24 @@
   // 사진 파일을 화면에 그릴 수 있는 소스(ImageBitmap 또는 Image)로 변환.
   // (EXIF 방향 정보 때문에 사진이 옆으로 눕는 걸 막기 위해, 가능하면
   // createImageBitmap({imageOrientation:'from-image'})로 방향을 먼저 바로잡음)
-  function loadImageSource(file){
+  // maxDim을 넘으면 디코딩 단계에서부터 줄여서 읽어옴(원본 12MP짜리를 그대로 여러 장
+  // 메모리에 올리면 느려지거나 멈추는 폰이 있어서, 애초에 필요한 크기로만 디코딩함).
+  function loadImageSource(file, maxDim){
     return new Promise(function(resolve){
       if (window.createImageBitmap){
-        createImageBitmap(file, { imageOrientation: 'from-image' })
-          .then(function(bmp){ resolve({ src: bmp, w: bmp.width, h: bmp.height }); })
+        var opts = { imageOrientation: 'from-image' };
+        if (maxDim){ opts.resizeWidth = maxDim; opts.resizeQuality = 'medium'; }
+        createImageBitmap(file, opts)
+          .then(function(bmp){ resolve({ src: bmp, w: bmp.width, h: bmp.height, bitmap: true }); })
           .catch(function(){
             var img = new Image();
-            img.onload = function(){ resolve({ src: img, w: img.naturalWidth, h: img.naturalHeight }); };
+            img.onload = function(){ resolve({ src: img, w: img.naturalWidth, h: img.naturalHeight }); URL.revokeObjectURL(img.src); };
             img.onerror = function(){ resolve(null); };
             img.src = URL.createObjectURL(file);
           });
       } else {
         var img = new Image();
-        img.onload = function(){ resolve({ src: img, w: img.naturalWidth, h: img.naturalHeight }); };
+        img.onload = function(){ resolve({ src: img, w: img.naturalWidth, h: img.naturalHeight }); URL.revokeObjectURL(img.src); };
         img.onerror = function(){ resolve(null); };
         img.src = URL.createObjectURL(file);
       }
@@ -789,8 +793,22 @@
   // 기기가 우리가 편집한 사진 대신 원본을 찾아서 보내버리는 문제가 있었는데(확인됨: 1장은
   // 정상, 2장 이상이면 글씨가 사라짐), 애초에 파일을 1개로 합쳐버리면 그 문제 자체가 없어지고
   // 버튼도 한 번만 누르면 됨.
+  // 사진들을 한 장씩 순서대로(동시에 X) 필요한 크기로만 디코딩해서 읽어옴.
+  // 예전엔 12MP 원본 사진 여러 장을 동시에 원본 그대로 디코딩하면서 느려지거나
+  // 멈추는(그리고 결국 실패하는) 문제가 있었는데, 애초에 필요한 작은 크기로,
+  // 그것도 한 장씩 순서대로 디코딩하면 메모리 부담이 훨씬 줄어듦.
+  function loadImagesSequential(files, maxDim){
+    var out = [];
+    return files.reduce(function(p, f){
+      return p.then(function(){
+        return loadImageSource(f, maxDim).then(function(im){ out.push(im); });
+      });
+    }, Promise.resolve()).then(function(){ return out; });
+  }
+
   function composeAndStampPhotos(files, label){
-    return Promise.all(files.map(loadImageSource)).then(function(imgs){
+    var maxDim = files.length === 1 ? 1080 : 700;
+    return loadImagesSequential(files, maxDim).then(function(imgs){
       imgs = imgs.filter(Boolean);
       if (!imgs.length) return null;
       var GAP = 8;
@@ -806,6 +824,7 @@
         canvas.width = W; canvas.height = totalH;
         ctx = canvas.getContext('2d');
         ctx.drawImage(im0.src, 0, 0, W, h0);
+        if (im0.bitmap && im0.src.close) im0.src.close();
       } else {
         // 사진이 2장 이상이면, 사진 개수에 따라 캔버스가 한없이 커지지 않도록
         // 정사각형 칸(격자)에 맞춰 가운데를 크롭해서 배치함. 칸 크기가 고정이라
@@ -837,6 +856,7 @@
           ctx.clip();
           ctx.drawImage(im.src, dx, dy, dw, dh);
           ctx.restore();
+          if (im.bitmap && im.src.close) im.src.close();
         });
       }
       ctx.fillStyle = 'rgba(0,0,0,0.65)';
