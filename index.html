@@ -213,7 +213,7 @@
     <h2>금일 배송매장 선택</h2>
     <div class="hint" id="pickerStartEnd"></div>
     <div class="hint" id="pickerHint"></div>
-    <div class="hint" id="pickerCount" style="font-weight:700;"></div>
+    <div id="pickerCount" style="font-weight:700; font-size:14px; color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); border-radius:8px; padding:7px 10px; display:inline-block;"></div>
     <div class="stop-picker" id="stopPicker"></div>
     <label class="field" style="max-width:180px;"><span class="lbl">오늘 출발 시각</span><input type="time" id="departTime" value="03:00"></label>
     <div class="field" style="margin-top:10px;">
@@ -646,7 +646,7 @@
     if (!countEl) return;
     var selectedLocs = Object.keys(state.selected).map(locById).filter(Boolean);
     var n = selectedLocs.length;
-    if (!n){ countEl.textContent = ''; return; }
+    if (!n){ countEl.textContent = '선택된 배달처: 0곳'; return; }
     var addrMap = {};
     selectedLocs.forEach(function(l){
       var a = (l.address||'').trim();
@@ -654,7 +654,7 @@
       addrMap[a] = (addrMap[a]||0) + 1;
     });
     var dupAddrs = Object.keys(addrMap).filter(function(a){ return addrMap[a] > 1; });
-    var text = '오늘 선택된 배달처: 총 ' + n + '곳';
+    var text = '✅ 선택된 배달처: ' + n + '곳';
     if (dupAddrs.length){
       var dupNames = selectedLocs.filter(function(l){ return dupAddrs.indexOf((l.address||'').trim()) !== -1; }).map(function(l){ return l.name; });
       text += ' · ⚠ 같은 주소 배달처 ' + dupNames.length + '곳 포함 (' + dupNames.join(', ') + ') — 같은 건물이면 문제 없어요.';
@@ -775,6 +775,7 @@
   // 사진 여러 장을 한 번에 공유하는 것도 지원함 — 카톡에서 사진 묶음으로 한번에 전송됨).
   var pendingPhotoShareLabel = '';
   var pendingPhotoShareItems = []; // [{file, url}, ...] — 원본(글씨 새기기 전) 사진들
+  var pendingPhotoShareRetry = 0; // 실패할 때마다 늘려서 다음 시도 땐 더 작은 크기로 처리함
 
   // 사진 파일을 화면에 그릴 수 있는 소스(ImageBitmap 또는 Image)로 변환.
   // (EXIF 방향 정보 때문에 사진이 옆으로 눕는 걸 막기 위해, 가능하면
@@ -822,8 +823,13 @@
     }, Promise.resolve()).then(function(){ return out; });
   }
 
-  function composeAndStampPhotos(files, label){
-    var maxDim = files.length === 1 ? 1080 : 700;
+  function composeAndStampPhotos(files, label, shrink){
+    // 사진 용량이 크면(요즘 폰 카메라는 한 장에 10~20MB씩도 나옴) 처리 중 오류가 날 수 있어서,
+    // 카톡으로 보내기엔 충분하면서 훨씬 가벼운 크기로 줄여서 처리함.
+    // shrink(0,1,2...)는 실패해서 재시도할 때마다 한 단계씩 더 작게 줄이기 위한 값.
+    var scale = Math.pow(0.7, shrink || 0);
+    var baseDim = files.length === 1 ? 900 : 600;
+    var maxDim = Math.max(280, Math.round(baseDim * scale));
     return loadImagesSequential(files, maxDim).then(function(imgs){
       imgs = imgs.filter(Boolean);
       if (!imgs.length) return null;
@@ -832,7 +838,7 @@
       if (imgs.length === 1){
         // 사진이 1장이면 자르지 않고 원본 비율 그대로, 폭만 안전한 크기로 제한.
         var im0 = imgs[0];
-        W = Math.min(im0.w, 1080);
+        W = Math.min(im0.w, 900);
         var h0 = Math.round(im0.h * (W / im0.w));
         barH = Math.max(64, Math.round(W * 0.13));
         totalH = h0;
@@ -850,7 +856,7 @@
         // 바람에 사진도 글씨도 작아지고, 일부 기기에선 캔버스가 너무 커져 아예 안 그려졌음.)
         var cols = imgs.length <= 2 ? imgs.length : 2;
         var rows = Math.ceil(imgs.length / cols);
-        var CELL = 520;
+        var CELL = Math.max(160, Math.round(440 * scale));
         W = cols * CELL + GAP * (cols - 1);
         var gridH = rows * CELL + GAP * (rows - 1);
         barH = Math.max(70, Math.round(W * 0.11));
@@ -887,7 +893,7 @@
         canvas.toBlob(function(blob){
           if (!blob) { resolve(null); return; }
           resolve(new File([blob], 'delivery.jpg', { type: 'image/jpeg' }));
-        }, 'image/jpeg', 0.9);
+        }, 'image/jpeg', 0.82);
       });
     });
   }
@@ -899,12 +905,14 @@
     }
     pendingPhotoShareLabel = label;
     pendingPhotoShareItems = [];
+    pendingPhotoShareRetry = 0;
     document.getElementById('photoShareInput').click();
   }
   function closePhotoShareBar(){
     document.getElementById('photoShareBar').style.display = 'none';
     pendingPhotoShareItems.forEach(function(it){ URL.revokeObjectURL(it.url); });
     pendingPhotoShareItems = [];
+    pendingPhotoShareRetry = 0;
   }
   function renderPhotoShareBar(){
     var thumbs = document.getElementById('photoShareThumbs'); thumbs.innerHTML = '';
@@ -949,8 +957,8 @@
     sendBtn.textContent = '사진 준비 중...';
     var files = pendingPhotoShareItems.map(function(it){ return it.file; });
     var label = pendingPhotoShareLabel;
-    composeAndStampPhotos(files, label).then(function(finalFile){
-      if (!finalFile){ sendBtn.disabled = false; sendBtn.textContent = '카톡으로 보내기'; return; }
+
+    function doShare(finalFile){
       var data = { files: [finalFile] };
       if (!(navigator.canShare && navigator.canShare(data))){
         toast('이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
@@ -966,7 +974,22 @@
         toast('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진 앱에서 직접 카톡으로 보내주세요.');
         closePhotoShareBar();
       });
-    });
+    }
+
+    // 상호명이 안 새겨진 사진은 절대 보내면 안 되므로, 글씨 새기기가 실패하면
+    // 그냥 보내지 말고 멈춘 뒤 다시 시도하게 함(원본만 보내는 일은 없음).
+    // 사진은 지워지지 않고 그대로 남아있어서 다시 찍을 필요 없이 버튼만 다시 누르면 되고,
+    // 실패할 때마다 다음 시도는 자동으로 더 작은 크기로 처리해서 성공 확률을 높임.
+    function onFail(){
+      sendBtn.disabled = false;
+      sendBtn.textContent = '카톡으로 보내기 (다시 시도, 더 작게)';
+      pendingPhotoShareRetry++;
+      toast('상호명 새기기에 실패했어요. 다시 누르면 더 작은 크기로 재시도해요(사진은 안 지워졌어요).');
+    }
+    composeAndStampPhotos(files, label, pendingPhotoShareRetry).then(function(finalFile){
+      if (!finalFile){ onFail(); return; }
+      doShare(finalFile);
+    }).catch(onFail);
   });
 
   // "도착 완료" 체크할 때마다, 다음 배송지로(또는 마지막이었으면 복귀/도착지로) 바로
