@@ -793,35 +793,55 @@
     return Promise.all(files.map(loadImageSource)).then(function(imgs){
       imgs = imgs.filter(Boolean);
       if (!imgs.length) return null;
-      var GAP = 6;
-      // 사진이 여러 장이면 캔버스 전체 높이가 커지는데, 일부 기기는 캔버스 크기(가로x세로,
-      // 또는 총 픽셀수)에 제한이 있어서 그 이상이면 그림이 안 그려지거나 빈 화면이 되는
-      // 문제가 있었음(3장부터 글씨가 안 나온 원인). 그래서 폭을 카톡 전송용으로 충분한
-      // 크기로 미리 줄여서(최대 1080px) 사진이 몇 장이든 안전한 크기 안에 들어오게 함.
-      var MAX_W = 1080;
-      var rawW = Math.max.apply(null, imgs.map(function(im){ return im.w; }));
-      var W = Math.min(rawW, MAX_W);
-      var scaled = imgs.map(function(im){
-        var w = W, h = Math.round(im.h * (W / im.w));
-        return { src: im.src, w: w, h: h };
-      });
-      var totalH = scaled.reduce(function(sum, im){ return sum + im.h; }, 0) + GAP * (scaled.length - 1);
-      var canvas = document.createElement('canvas');
-      canvas.width = W; canvas.height = totalH;
-      var ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, W, totalH);
-      var y = 0;
-      scaled.forEach(function(im){
-        ctx.drawImage(im.src, 0, y, im.w, im.h);
-        y += im.h + GAP;
-      });
-      // 글씨 크기는 사진 개수(=전체 높이)에 영향받지 않도록 사진 "폭" 기준 고정 비율로 정함
-      // (예전엔 전체 높이 기준이라 사진이 많아질수록 계산이 꼬였고, 1~2장일 땐 너무 작았음).
-      var barH = Math.max(64, Math.round(W * 0.13));
+      var GAP = 8;
+      var canvas, ctx, W, totalH, barH;
+      if (imgs.length === 1){
+        // 사진이 1장이면 자르지 않고 원본 비율 그대로, 폭만 안전한 크기로 제한.
+        var im0 = imgs[0];
+        W = Math.min(im0.w, 1080);
+        var h0 = Math.round(im0.h * (W / im0.w));
+        barH = Math.max(64, Math.round(W * 0.13));
+        totalH = h0;
+        canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = totalH;
+        ctx = canvas.getContext('2d');
+        ctx.drawImage(im0.src, 0, 0, W, h0);
+      } else {
+        // 사진이 2장 이상이면, 사진 개수에 따라 캔버스가 한없이 커지지 않도록
+        // 정사각형 칸(격자)에 맞춰 가운데를 크롭해서 배치함. 칸 크기가 고정이라
+        // 사진이 몇 장이든(3장, 4장...) 캔버스 크기가 예측 가능한 범위 안에 있고,
+        // 예전처럼 세로로 쭉 이어붙이던 방식보다 사진과 글씨가 카톡 화면에서 더 크게 보임.
+        // (예전 방식은 사진이 늘어날수록 세로로 길쭉해져서, 카톡이 통째로 축소해 보여주는
+        // 바람에 사진도 글씨도 작아지고, 일부 기기에선 캔버스가 너무 커져 아예 안 그려졌음.)
+        var cols = imgs.length <= 2 ? imgs.length : 2;
+        var rows = Math.ceil(imgs.length / cols);
+        var CELL = 520;
+        W = cols * CELL + GAP * (cols - 1);
+        var gridH = rows * CELL + GAP * (rows - 1);
+        barH = Math.max(70, Math.round(W * 0.11));
+        totalH = gridH + barH;
+        canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = totalH;
+        ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, W, totalH);
+        imgs.forEach(function(im, i){
+          var col = i % cols, row = Math.floor(i / cols);
+          var cx = col * (CELL + GAP), cy = row * (CELL + GAP);
+          var scale = Math.max(CELL / im.w, CELL / im.h);
+          var dw = im.w * scale, dh = im.h * scale;
+          var dx = cx + (CELL - dw) / 2, dy = cy + (CELL - dh) / 2;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(cx, cy, CELL, CELL);
+          ctx.clip();
+          ctx.drawImage(im.src, dx, dy, dw, dh);
+          ctx.restore();
+        });
+      }
       ctx.fillStyle = 'rgba(0,0,0,0.65)';
       ctx.fillRect(0, totalH - barH, W, barH);
-      var fontSize = Math.max(30, Math.round(barH * 0.5));
+      var fontSize = Math.max(30, Math.round(barH * 0.46));
       ctx.font = 'bold ' + fontSize + 'px "Apple SD Gothic Neo","Malgun Gothic",sans-serif';
       ctx.fillStyle = '#ffffff';
       ctx.textBaseline = 'middle';
