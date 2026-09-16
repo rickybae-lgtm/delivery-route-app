@@ -92,6 +92,15 @@
   .btn-primary:disabled{ opacity:.45; cursor:not-allowed; }
   .btn-ghost{ background:transparent; color:var(--ink); border-color:var(--line); }
   .btn-ghost.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .icon-actions{ display:flex; gap:10px; margin:4px 0 8px; }
+  .icon-btn{
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    width:76px; padding:10px 4px; border-radius:14px; background:var(--surface-2);
+    border:1px solid var(--line); color:var(--ink); text-decoration:none; font-size:11.5px;
+    font-weight:600; cursor:pointer;
+  }
+  .icon-btn .icon-btn-ico{ font-size:22px; line-height:1; }
+  .icon-btn:active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
   .btn-ghost:hover{ background:var(--surface-2); }
   .btn-danger{ background:transparent; color:var(--danger); border-color:var(--line); }
   .btn-sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
@@ -1097,8 +1106,8 @@
         ? ('이전 지점에서 실제 주행 ' + fmtKm(entry.leg.distanceM) + ' (' + fmtMin(entry.leg.durationS) + ') · 예상 도착 ' + fmtHHMM(entry.arrivalMin))
         : '경로 정보 없음';
       var actionLink = hasCoords(loc)
-        ? '<a href="#" data-navstop="' + i + '">이 배달처만 ' + navAppLabel() + ' 길찾기 →</a>'
-        : '<a href="' + navSearchLink(loc.address||loc.name) + '">' + navAppLabel() + '에서 주소 검색하기 →</a>';
+        ? '<a class="icon-btn" href="#" data-navstop="' + i + '"><span class="icon-btn-ico">🧭</span><span>길찾기</span></a>'
+        : '<a class="icon-btn" href="' + navSearchLink(loc.address||loc.name) + '"><span class="icon-btn-ico">🔍</span><span>주소검색</span></a>';
       var notesHtml = '';
       if (loc.keyLoc) notesHtml += '<div><b>열쇠</b> ' + escapeHtml(loc.keyLoc) + '</div>';
       if (loc.pw) notesHtml += '<div><b>비밀번호</b> ' + escapeHtml(loc.pw) + '</div>';
@@ -1122,8 +1131,10 @@
           (loc.address ? '<div class="stop-addr">' + escapeHtml(loc.address) + '</div>' : '') +
           '<div class="leg-dist">' + distLine + '</div>' +
           (notesHtml ? '<div class="stop-notes">' + notesHtml + '</div>' : '') +
-          '<div class="stop-actions">' + actionLink +
-            '<button class="btn-ghost btn-sm" data-photoshare="'+i+'" type="button">📸 사진 찍어서 카톡 보내기</button>' +
+          '<div class="icon-actions">' + actionLink +
+            '<button class="icon-btn" data-photoshare="'+i+'" type="button"><span class="icon-btn-ico">📸</span><span>사진전송</span></button>' +
+          '</div>' +
+          '<div class="stop-actions">' +
             '<button class="btn-ghost btn-sm" data-toend="'+i+'" type="button">맨 뒤로 보내기</button></div>' +
         '</div>';
       list.appendChild(card2);
