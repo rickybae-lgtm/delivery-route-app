@@ -150,6 +150,12 @@
 
   .banner{ font-size:12.5px; padding:9px 12px; border-radius:9px; background:var(--surface-2); border:1px solid var(--line); color:var(--ink-soft); }
   .toast{ position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:var(--bg); padding:9px 16px; border-radius:20px; font-size:13px; font-weight:600; box-shadow:var(--shadow); z-index:50; opacity:0; pointer-events:none; transition:opacity .2s ease; max-width:90vw; text-align:center; }
+  #lockScreen{ position:fixed; inset:0; z-index:200; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:24px; }
+  #lockScreen .lockBox{ width:100%; max-width:320px; display:flex; flex-direction:column; gap:14px; text-align:center; }
+  #lockScreen h2{ margin:0; font-size:20px; }
+  #lockScreen input{ width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--line); font-size:16px; text-align:center; background:var(--surface); color:var(--ink); }
+  #lockScreen button{ width:100%; padding:12px; border-radius:10px; border:none; background:var(--accent); color:var(--accent-ink); font-size:15px; font-weight:700; }
+  #lockScreen .lockErr{ color:#d0342c; font-size:13px; min-height:16px; }
   .toast.show{ opacity:1; }
   .spinner{ display:inline-block; width:13px; height:13px; border:2px solid color-mix(in srgb, var(--accent) 40%, transparent); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
   @keyframes spin{ to{ transform:rotate(360deg); } }
@@ -165,7 +171,17 @@
 </head>
 <body>
 
-<div class="wrap">
+<div id="lockScreen">
+  <div class="lockBox">
+    <h2>🔒 경성 티에프</h2>
+    <div style="font-size:13.5px; color:var(--ink-soft);">직원용 비밀번호를 입력해주세요.</div>
+    <input type="password" id="lockPwInput" inputmode="numeric" autocomplete="off" placeholder="비밀번호">
+    <button type="button" id="lockPwBtn">확인</button>
+    <div class="lockErr" id="lockPwErr"></div>
+  </div>
+</div>
+
+<div class="wrap" id="appWrap" style="display:none;">
   <header class="app-header">
     <h1>경성 티에프</h1>
     <span class="date" id="todayDate"></span>
@@ -1549,15 +1565,56 @@
     } else { toast('이 브라우저에서는 복사가 지원되지 않아요.'); }
   });
 
-  state.locations = loadLocations();
-  loadStartEnd();
-  state.order = loadOrder();
-  renderAll();
-  renderRoute();
-  (function initTab(){
-    var last = null;
-    try { last = sessionStorage.getItem('deliveryRoute.activeTab'); } catch (e) {}
-    switchTab(TAB_IDS.indexOf(last) !== -1 ? last : 'pickerCard');
+  function initApp(){
+    state.locations = loadLocations();
+    loadStartEnd();
+    state.order = loadOrder();
+    renderAll();
+    renderRoute();
+    (function initTab(){
+      var last = null;
+      try { last = sessionStorage.getItem('deliveryRoute.activeTab'); } catch (e) {}
+      switchTab(TAB_IDS.indexOf(last) !== -1 ? last : 'pickerCard');
+    })();
+    document.getElementById('appWrap').style.display = '';
+  }
+
+  // 직원용 비밀번호 잠금 — 하루 한 번만 물어봄(그날 이미 맞혔으면 다시 안 물어봄).
+  // 비밀번호를 바꾸고 싶으면: 바로 아래 APP_PASSWORD 값만 원하는 비밀번호로 고치고
+  // GitHub에 커밋하면 됨(Vercel 설정 화면 들어갈 필요 없음).
+  var APP_PASSWORD = '2580';
+  var LOCK_KEY = 'deliveryRoute.lockOk.v1';
+  function submitLockPw(){
+    var input = document.getElementById('lockPwInput');
+    var btn = document.getElementById('lockPwBtn');
+    var err = document.getElementById('lockPwErr');
+    var pw = input.value;
+    err.textContent = '';
+    if (pw === APP_PASSWORD){
+      try { localStorage.setItem(LOCK_KEY, JSON.stringify({ date: todayStr() })); } catch (e) {}
+      document.getElementById('lockScreen').style.display = 'none';
+      initApp();
+    } else {
+      err.textContent = '비밀번호가 틀렸어요.';
+      input.value = ''; input.focus();
+    }
+  }
+  document.getElementById('lockPwBtn').addEventListener('click', submitLockPw);
+  document.getElementById('lockPwInput').addEventListener('keydown', function(e){ if (e.key === 'Enter') submitLockPw(); });
+
+  (function checkLockAndInit(){
+    var okToday = false;
+    try {
+      var v = JSON.parse(localStorage.getItem(LOCK_KEY) || 'null');
+      okToday = !!(v && v.date === todayStr());
+    } catch (e) {}
+    if (okToday){
+      document.getElementById('lockScreen').style.display = 'none';
+      initApp();
+    } else {
+      document.getElementById('lockScreen').style.display = 'flex';
+      setTimeout(function(){ document.getElementById('lockPwInput').focus(); }, 50);
+    }
   })();
 })();
 </script>
