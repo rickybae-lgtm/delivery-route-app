@@ -740,8 +740,9 @@
   }
 
   // ---------- 사진 찍어서 카톡 보내기 ----------
-  // 카메라로 찍은 사진을, 상호명이 이미 채워진 채로 스마트폰 "공유하기" 창에 넘겨줌
-  // (그 창에서 카카오톡만 골라 보내면 됨 — 상호명 직접 타이핑 안 해도 됨).
+  // 카메라로 찍은 사진 하단에 상호명 글씨를 직접 새겨넣은 뒤(캔버스로 합성) 그 사진을
+  // 공유함 — 카톡이 텍스트를 따로 안 붙여줘도, 사진 자체에 글씨가 박혀 있어서
+  // 붙여넣기 없이도 상호명이 항상 같이 보임.
   //
   // 주의: 카메라 앱을 열었다 돌아오면 브라우저가 "방금 사용자가 직접 누른 동작"이라는
   // 인식을 잃어버려서(NotAllowedError), 그 시점에 곧바로 navigator.share()를 부르면 막히는
@@ -750,6 +751,50 @@
   var pendingPhotoShareLabel = '';
   var pendingPhotoShareFile = null;
   var pendingPhotoShareUrl = null;
+
+  // 사진(file) 하단에 반투명 바 + 흰 글씨로 label을 새겨서 새 이미지 파일로 만들어줌.
+  // (EXIF 방향 정보 때문에 사진이 옆으로 눕는 걸 막기 위해, 가능하면
+  // createImageBitmap({imageOrientation:'from-image'})로 방향을 먼저 바로잡음)
+  function stampPhoto(file, label){
+    return new Promise(function(resolve){
+      function draw(src, w, h){
+        try {
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(src, 0, 0, w, h);
+          var barH = Math.max(56, Math.round(h * 0.09));
+          ctx.fillStyle = 'rgba(0,0,0,0.6)';
+          ctx.fillRect(0, h - barH, w, barH);
+          var fontSize = Math.max(22, Math.round(barH * 0.46));
+          ctx.font = 'bold ' + fontSize + 'px "Apple SD Gothic Neo","Malgun Gothic",sans-serif';
+          ctx.fillStyle = '#ffffff';
+          ctx.textBaseline = 'middle';
+          ctx.textAlign = 'left';
+          ctx.fillText(label, Math.round(barH * 0.35), h - barH / 2, w - barH * 0.7);
+          canvas.toBlob(function(blob){
+            if (!blob) { resolve(file); return; }
+            resolve(new File([blob], 'delivery.jpg', { type: 'image/jpeg' }));
+          }, 'image/jpeg', 0.92);
+        } catch (e) { resolve(file); }
+      }
+      if (window.createImageBitmap){
+        createImageBitmap(file, { imageOrientation: 'from-image' }).then(function(bmp){ draw(bmp, bmp.width, bmp.height); })
+          .catch(function(){
+            var img = new Image();
+            img.onload = function(){ draw(img, img.naturalWidth, img.naturalHeight); };
+            img.onerror = function(){ resolve(file); };
+            img.src = URL.createObjectURL(file);
+          });
+      } else {
+        var img = new Image();
+        img.onload = function(){ draw(img, img.naturalWidth, img.naturalHeight); };
+        img.onerror = function(){ resolve(file); };
+        img.src = URL.createObjectURL(file);
+      }
+    });
+  }
+
   function startPhotoShare(label){
     if (!(navigator.canShare && navigator.share)){
       toast('이 브라우저에서는 사진 공유 기능이 지원되지 않아요. 카메라로 찍어서 카톡으로 직접 보내주세요.');
@@ -768,45 +813,32 @@
     var file = e.target.files && e.target.files[0];
     this.value = '';
     if (!file) return;
-    if (pendingPhotoShareUrl) URL.revokeObjectURL(pendingPhotoShareUrl);
-    pendingPhotoShareFile = file;
-    pendingPhotoShareUrl = URL.createObjectURL(file);
-    document.getElementById('photoShareThumb').src = pendingPhotoShareUrl;
-    document.getElementById('photoShareName').textContent = pendingPhotoShareLabel + ' 사진 준비됨 (보내면 상호명 복사됨)';
-    document.getElementById('photoShareBar').style.display = 'flex';
+    var label = pendingPhotoShareLabel;
+    stampPhoto(file, label).then(function(stamped){
+      if (pendingPhotoShareUrl) URL.revokeObjectURL(pendingPhotoShareUrl);
+      pendingPhotoShareFile = stamped;
+      pendingPhotoShareUrl = URL.createObjectURL(stamped);
+      document.getElementById('photoShareThumb').src = pendingPhotoShareUrl;
+      document.getElementById('photoShareName').textContent = label + ' — 사진에 상호명 새겨서 준비됨';
+      document.getElementById('photoShareBar').style.display = 'flex';
+    });
   });
   document.getElementById('photoShareCancelBtn').addEventListener('click', closePhotoShareBar);
   document.getElementById('photoShareSendBtn').addEventListener('click', function(){
     if (!pendingPhotoShareFile) return;
-    var file = pendingPhotoShareFile, label = pendingPhotoShareLabel;
-    // 카톡이 사진과 함께 넘긴 텍스트를 채팅창에 안 채워주는 경우가 많아서, 상호명을
-    // 클립보드에 복사해둠 — 사진 보낸 뒤 채팅창에 붙여넣기만 하면 타이핑 없이 끝남.
-    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(label); } catch (e) {}
-    var withText = { files: [file], text: label };
-    var filesOnly = { files: [file] };
-    // 일부 브라우저는 files+text를 같이 넘기면 거부하는 경우가 있어서, 실패하면
-    // 상호명 텍스트 없이 사진만이라도 공유되도록 한 번 더 시도해봄.
-    function tryShare(data, isFallback){
-      if (!(navigator.canShare && navigator.canShare(data))){
-        if (!isFallback) return tryShare(filesOnly, true);
-        toast('이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
-        closePhotoShareBar();
-        return;
-      }
-      navigator.share(data).then(function(){
-        closePhotoShareBar();
-        // 사진 보낸 직후 두 번째 공유창(텍스트만)을 자동으로 띄우는 건 기기에 따라
-        // 브라우저가 막아서(확인됨) 안 뜨는 경우가 있음 — 그 대신 상호명은 이미
-        // 클립보드에 복사돼 있으니, 카톡 채팅창에 붙여넣기만 하면 되도록 안내함.
-        toast('📋 "' + label + '" 복사됐어요! 카톡 채팅창을 길게 눌러 붙여넣기 하세요.');
-      }).catch(function(err){
-        if (err && err.name === 'AbortError') return; // 사용자가 공유창을 취소한 경우(사진은 계속 준비된 채로 둠)
-        if (!isFallback) { tryShare(filesOnly, true); return; }
-        toast('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진 앱에서 직접 카톡으로 보내주세요.');
-        closePhotoShareBar();
-      });
+    var data = { files: [pendingPhotoShareFile] };
+    if (!(navigator.canShare && navigator.canShare(data))){
+      toast('이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
+      closePhotoShareBar();
+      return;
     }
-    tryShare(withText, false);
+    navigator.share(data).then(function(){
+      closePhotoShareBar();
+    }).catch(function(err){
+      if (err && err.name === 'AbortError') return; // 사용자가 공유창을 취소한 경우(사진은 계속 준비된 채로 둠)
+      toast('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진 앱에서 직접 카톡으로 보내주세요.');
+      closePhotoShareBar();
+    });
   });
 
   // "도착 완료" 체크할 때마다, 다음 배송지로(또는 마지막이었으면 복귀/도착지로) 바로
