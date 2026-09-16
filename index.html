@@ -91,6 +91,7 @@
   .btn-primary{ background:var(--accent); color:var(--accent-ink); }
   .btn-primary:disabled{ opacity:.45; cursor:not-allowed; }
   .btn-ghost{ background:transparent; color:var(--ink); border-color:var(--line); }
+  .btn-ghost.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
   .btn-ghost:hover{ background:var(--surface-2); }
   .btn-danger{ background:transparent; color:var(--danger); border-color:var(--line); }
   .btn-sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
@@ -214,7 +215,10 @@
     <div class="hint" id="pickerStartEnd"></div>
     <div class="hint" id="pickerHint"></div>
     <input type="text" id="pickerSearch" placeholder="🔍 상호명 검색 (한 글자씩 입력하면 바로 걸러져요)" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); font-size:14.5px; background:var(--surface); color:var(--ink); margin-bottom:2px;">
-    <div id="pickerCount" style="font-weight:700; font-size:14px; color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); border-radius:8px; padding:7px 10px; display:inline-block;"></div>
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <div id="pickerCount" style="font-weight:700; font-size:14px; color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); border-radius:8px; padding:7px 10px; display:inline-block;"></div>
+      <button type="button" class="btn-ghost btn-sm" id="pickerShowSelectedBtn">✅ 선택한 곳만 보기</button>
+    </div>
     <div class="stop-picker" id="stopPicker"></div>
     <label class="field" style="max-width:180px;"><span class="lbl">오늘 출발 시각</span><input type="time" id="departTime" value="03:00"></label>
     <div class="field" style="margin-top:10px;">
@@ -663,8 +667,11 @@
     countEl.textContent = text;
   }
 
-  // 체크박스 목록 부분만 그려줌(검색어에 따라 걸러진 목록). renderPicker()와
-  // 검색창 입력 이벤트 둘 다에서 재사용.
+  // "선택한 곳만 보기" 토글 상태(기기에 저장 안 하고 화면 켜져있는 동안만 기억함).
+  var pickerShowSelectedOnly = false;
+
+  // 체크박스 목록 부분만 그려줌(검색어/선택한 곳만 보기 여부에 따라 걸러진 목록).
+  // renderPicker()와 검색창 입력 이벤트 둘 다에서 재사용.
   function renderPickerRows(pickable){
     var wrap = document.getElementById('stopPicker');
     var searchEl = document.getElementById('pickerSearch');
@@ -674,8 +681,14 @@
     // 자모 분리 대신 완성된 글자 그대로 앞부분 일치만 봄.
     var q = qRaw.toLowerCase();
     var visible = q ? pickable.filter(function(loc){ return (loc.name || '').trim().toLowerCase().indexOf(q) === 0; }) : pickable;
+    // "선택한 곳만 보기"가 켜져있으면 체크된 곳만 추림(업체목록과 같은 순서 그대로 유지됨,
+    // pickable 자체가 state.locations 순서를 따르기 때문).
+    if (pickerShowSelectedOnly) visible = visible.filter(function(loc){ return !!state.selected[loc.id]; });
+    var selBtn = document.getElementById('pickerShowSelectedBtn');
+    if (selBtn) selBtn.classList.toggle('active', pickerShowSelectedOnly);
     wrap.innerHTML = '';
     if (!pickable.length){ wrap.innerHTML = '<div class="empty">출발지/도착지로 지정된 곳 외에 배달처가 없습니다.</div>'; return; }
+    if (pickerShowSelectedOnly && !visible.length){ wrap.innerHTML = '<div class="empty">아직 선택한 곳이 없어요.</div>'; return; }
     if (!visible.length){ wrap.innerHTML = '<div class="empty">"' + escapeHtml(qRaw) + '"와 일치하는 업체가 없어요.</div>'; return; }
     visible.forEach(function(loc){
       var row = document.createElement('label');
@@ -687,7 +700,12 @@
         (!hasCoords(loc) ? '<span class="badge warn">좌표없음</span>' : '');
       wrap.appendChild(row);
     });
-    wrap.querySelectorAll('input[data-sel-id]').forEach(function(c){ c.addEventListener('change', function(){ if (this.checked) state.selected[this.dataset.selId]=true; else delete state.selected[this.dataset.selId]; updatePickerCount(); }); });
+    wrap.querySelectorAll('input[data-sel-id]').forEach(function(c){ c.addEventListener('change', function(){
+      if (this.checked) state.selected[this.dataset.selId]=true; else delete state.selected[this.dataset.selId];
+      updatePickerCount();
+      // "선택한 곳만 보기" 중엔 체크 해제하면 바로 목록에서 사라지게 다시 그려줌.
+      if (pickerShowSelectedOnly) renderPickerRows(pickable);
+    }); });
   }
   function renderPicker(){
     var wrap = document.getElementById('stopPicker');
@@ -713,6 +731,15 @@
     if (!searchEl) return;
     searchEl.addEventListener('input', function(){
       // 체크박스 목록만 다시 그림(검색창 자체는 다시 안 그려서 커서/포커스 유지됨).
+      var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
+      renderPickerRows(pickable);
+    });
+  })();
+  (function initPickerShowSelected(){
+    var btn = document.getElementById('pickerShowSelectedBtn');
+    if (!btn) return;
+    btn.addEventListener('click', function(){
+      pickerShowSelectedOnly = !pickerShowSelectedOnly;
       var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
       renderPickerRows(pickable);
     });
