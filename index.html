@@ -203,14 +203,14 @@
   </div>
 
   <div class="tabbar" id="tabbar">
-    <button type="button" class="tab-btn" data-tab="pickerCard">🚚 금일배송<br>매장선택</button>
-    <button type="button" class="tab-btn" data-tab="routeCard" id="tabBtnRoute">📋 금일 배송순서</button>
+    <button type="button" class="tab-btn" data-tab="pickerCard">🚚 매장선택</button>
+    <button type="button" class="tab-btn" data-tab="routeCard" id="tabBtnRoute">📋 배송순서</button>
     <button type="button" class="tab-btn" data-tab="formCard">➕ 업체 등록</button>
     <button type="button" class="tab-btn" data-tab="listCard">📒 업체 목록</button>
   </div>
 
   <section class="card" id="pickerCard">
-    <h2>오늘 배달처 고르기</h2>
+    <h2>금일 배송매장 선택</h2>
     <div class="hint" id="pickerStartEnd"></div>
     <div class="hint" id="pickerHint"></div>
     <div class="hint" id="pickerCount" style="font-weight:700;"></div>
@@ -241,7 +241,7 @@
 
   <section class="card" id="routeCard">
     <h2>금일 배송순서</h2>
-    <div class="empty" id="routeEmptyMsg">아직 계산된 경로가 없어요. "금일배송매장선택" 탭에서 배달처를 고르고 "오늘 순서 계산하기"를 눌러주세요.</div>
+    <div class="empty" id="routeEmptyMsg">아직 계산된 경로가 없어요. "매장선택" 탭에서 배달처를 고르고 "오늘 순서 계산하기"를 눌러주세요.</div>
     <div id="routeContent" style="display:none; flex-direction:column; gap:14px;">
       <div class="hint" id="routeSummary"></div>
       <div class="btn-row">
@@ -1183,7 +1183,7 @@
       var orderHint = document.createElement('div');
       orderHint.className = 'hint';
       orderHint.style.marginBottom = '2px';
-      orderHint.textContent = '아래 ▲▼로 순서를 바꾸면, "금일배송매장선택" 탭의 배달처 고르기 목록에 뜨는 순서도 그대로 바뀌어요.';
+      orderHint.textContent = '아래 ▲▼로 순서를 바꾸면, "매장선택" 탭의 배달처 고르기 목록에 뜨는 순서도 그대로 바뀌어요.';
       grid.appendChild(orderHint);
     }
     list.forEach(function(loc, i){
