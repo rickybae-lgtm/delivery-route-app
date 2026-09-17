@@ -100,10 +100,11 @@ function totalDistOf(order, distances, endIdx) {
   return d;
 }
 
-// 오픈시간이 있는 node를 skeleton 안에 끼워 넣되, "오픈시간보다 최소 bufferSec만큼 일찍 도착"하는
-// 조건을 최우선으로 만족하는 자리를 고른다 (늦게 도착하는 자리는 정말 다른 방법이 전혀 없을 때만 선택).
-// 그 조건을 만족하는 자리가 여럿이면, 그중 버퍼가 딱 bufferSec에 가장 가까운(너무 일찍도 아닌) 자리,
-// 그것도 같으면 주행거리가 제일 적게 늘어나는 자리를 고른다.
+// 오픈시간이 있는 node를 skeleton 안에 끼워 넣는다.
+// 최우선 기준은 항상 "전체 동선 효율"(scheduleCost: 총 소요시간 > 총 거리 > 낭비성 대기)이고,
+// "오픈시간보다 bufferSec(기본 10분)만큼 일찍 도착"하는 건 어디까지나 "되도록이면" 지켜지면
+// 좋은 선호일 뿐, 그것 때문에 동선을 억지로 돌아가게 만들지는 않는다. 그래서 버퍼를 못 채우는
+// 정도(missBuffer)는 아주 작은 가중치만 줘서, 전체 효율이 동점에 가까울 때만 정해준다.
 function bestInsertionBeforeOpen(skeleton, node, durations, distances, openSecs, departSec, dwellSec, returnToStart, bufferSec) {
   const openSec = openSecs[node];
   const target = openSec - bufferSec;
@@ -112,10 +113,8 @@ function bestInsertionBeforeOpen(skeleton, node, durations, distances, openSecs,
     const cand = skeleton.slice(0, k).concat([node]).concat(skeleton.slice(k));
     const raw = rawArrivalTimes(cand, durations, dwellSec, departSec, openSecs);
     const rawAtNode = raw[k];
-    const lateness = Math.max(0, rawAtNode - target); // 0이면 버퍼 조건 충족(=늦지 않음)
-    const slack = Math.max(0, target - rawAtNode);     // 버퍼보다 얼마나 더 일찍인지(작을수록 효율적)
-    const dist = totalDistOf(cand, distances, returnToStart);
-    const cost = lateness * 1e12 + slack * 1e6 + dist;
+    const missBuffer = Math.max(0, rawAtNode - target); // 10분 버퍼를 못 채운 정도(초) — 참고용 선호일 뿐
+    const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart) + missBuffer;
     if (cost < bestCost - 1e-9) { bestCost = cost; bestPos = k; }
   }
   return skeleton.slice(0, bestPos).concat([node]).concat(skeleton.slice(bestPos));
@@ -351,7 +350,33 @@ module.exports = async (req, res) => {
           skeleton = bestInsertionBeforeOpen(skeleton, node, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, OPEN_BUFFER_SEC);
         });
 
-        const order = skeleton;
+        // 3) 같은 주소(=사실상 같은 좌표)에 등록된 배달처들은 절대 흩어지지 않게 함.
+        //    2)번 단계에서 오픈시간 있는 곳을 끼워 넣다 보면, 같은 건물 안 여러 거래처
+        //    사이에 다른 곳이 끼어드는 경우가 생길 수 있어서(예: 3곳 중 2곳만 몰고
+        //    한 곳은 딴 데 갔다 옴), 오픈시간 없는 같은 주소 그룹은 여기서 다시 붙여줌.
+        let order = skeleton;
+        function coordKey(pt) { return pt.lat.toFixed(5) + ',' + pt.lng.toFixed(5); }
+        const sameAddrGroups = {};
+        for (let i = 1; i <= n; i++) {
+          if (openSecs[i] != null) continue; // 오픈시간이 있는 곳은 시간 계산이 꼬일 수 있어 건드리지 않음
+          const key = coordKey(stops[i - 1]);
+          (sameAddrGroups[key] = sameAddrGroups[key] || []).push(i);
+        }
+        Object.keys(sameAddrGroups).forEach(function (key) {
+          const group = sameAddrGroups[key];
+          if (group.length < 2) return;
+          const positions = group.map(function (node) { return order.indexOf(node); }).sort(function (a, b) { return a - b; });
+          const alreadyTogether = positions[positions.length - 1] - positions[0] === positions.length - 1;
+          if (alreadyTogether) return;
+          const anchorPos = positions[0];
+          let insertAt = 0;
+          for (let idx = 0; idx < anchorPos; idx++) {
+            if (group.indexOf(order[idx]) === -1) insertAt++;
+          }
+          const withoutGroup = order.filter(function (node) { return group.indexOf(node) === -1; });
+          order = withoutGroup.slice(0, insertAt).concat(group).concat(withoutGroup.slice(insertAt));
+        });
+
         const sim = simulateSchedule(order, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx);
 
         // 혹시라도 정말 못 피한 지각이 있으면 경고용으로 표시할 수 있게 계산해둠
