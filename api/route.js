@@ -181,6 +181,35 @@ function localSearchMinFinish(initialOrder, durations, distances, openSecs, depa
   return { order: order, cost: bestCost };
 }
 
+// 순서 일부를 무작위로 크게 흔들어주는 "더블 브릿지" 섞기. 2-opt/or-opt만 계속 돌리면
+// 어중간한 모양(예: 가까운 두 곳 사이에 먼 곳이 끼어있는데, 그 하나를 빼거나 구간을
+// 뒤집는 것만으로는 더 나아지지 않아서 그대로 멈춰버리는 경우)에 갇힐 수 있어서,
+// 가끔 크게 흔들었다가 다시 다듬어 보고 그게 더 나으면 채택하는 방식으로 그런 함정을 피한다.
+function doubleBridgeShuffle(order) {
+  const n = order.length;
+  if (n < 8) return order.slice();
+  const pts = [];
+  while (pts.length < 3) {
+    const p = 1 + Math.floor(Math.random() * (n - 1));
+    if (pts.indexOf(p) === -1) pts.push(p);
+  }
+  pts.sort(function (a, b) { return a - b; });
+  const A = order.slice(0, pts[0]), B = order.slice(pts[0], pts[1]), C = order.slice(pts[1], pts[2]), D = order.slice(pts[2]);
+  return A.concat(C).concat(B).concat(D);
+}
+
+// localSearchMinFinish로 한 번 다듬은 다음, 몇 번 더 크게 흔들었다가 다시 다듬어보고
+// (iterated local search) 그중 제일 좋은 결과를 채택한다. 배달처 10~20곳 규모면 순식간에 끝남.
+function localSearchWithRestarts(initialOrder, durations, distances, openSecs, departSec, dwellSec, endIdx, restarts) {
+  let best = localSearchMinFinish(initialOrder, durations, distances, openSecs, departSec, dwellSec, endIdx);
+  for (let r = 0; r < restarts; r++) {
+    const shuffled = doubleBridgeShuffle(best.order);
+    const res = localSearchMinFinish(shuffled, durations, distances, openSecs, departSec, dwellSec, endIdx);
+    if (res.cost < best.cost - 1e-6) best = res;
+  }
+  return best;
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'method_not_allowed' });
@@ -337,7 +366,7 @@ module.exports = async (req, res) => {
         // 1) 오픈시간 없는 곳들만으로 순수 최단동선 뼈대를 만듦 (거리/시간만 기준, 대기 없음)
         let skeleton = nearestNeighborOrderSubset(untimedNodes, table.durations);
         if (untimedNodes.length > 1) {
-          skeleton = localSearchMinFinish(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx).order;
+          skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 8).order;
         }
 
         // 2) 오픈시간 있는 곳들을 마감시간이 이른 순서대로, 뼈대 안에서
@@ -349,6 +378,15 @@ module.exports = async (req, res) => {
         timedNodes.forEach(function (node) {
           skeleton = bestInsertionBeforeOpen(skeleton, node, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, OPEN_BUFFER_SEC);
         });
+
+        // 2.5) 오픈시간 있는 곳들을 하나씩 순서대로 끼워 넣기만 하고 끝내면, 그 그리디 방식 때문에
+        //      전체적으로 비효율적인 부분이 남을 수 있음(예: 가까운 두 곳 사이에 있던 자리에
+        //      다른 오픈시간 지점이 끼어들면서 애매하게 갈라지는 경우). 그래서 전체 순서를
+        //      대상으로 한 번 더 다듬어줌 — 오픈시간 자체(대기 포함)는 그대로 존중하면서,
+        //      전체 이동거리/시간이 줄어드는 자리가 있으면 옮겨준다.
+        if (skeleton.length > 2) {
+          skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 8).order;
+        }
 
         // 3) 같은 주소(=사실상 같은 좌표)에 등록된 배달처들은 절대 흩어지지 않게 함.
         //    2)번 단계에서 오픈시간 있는 곳을 끼워 넣다 보면, 같은 건물 안 여러 거래처
