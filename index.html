@@ -101,6 +101,7 @@
   }
   .icon-btn .icon-btn-ico{ font-size:22px; line-height:1; }
   .icon-btn:active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .icon-btn.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
   .btn-ghost:hover{ background:var(--surface-2); }
   .btn-danger{ background:transparent; color:var(--danger); border-color:var(--line); }
   .btn-sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
@@ -1288,9 +1289,11 @@
         (loc.memo ? '<div class="memo">' + escapeHtml(loc.memo) + '</div>' : '') +
         (!hasCoords(loc) ? '<div style="display:flex;gap:10px;flex-wrap:wrap;"><a href="' + navSearchLink(loc.address||loc.name) + '">' + navAppLabel() + '에서 주소 검색 →</a>' +
           '<a href="' + googleMapsSearchLink(loc.address||loc.name) + '" target="_blank">구글맵에서 좌표 찾기 →</a></div>' : '') +
+        '<div class="icon-actions">' +
+          '<button class="icon-btn' + (state.startId===loc.id ? ' active' : '') + '" data-setstart="' + loc.id + '"><span class="icon-btn-ico">🚩</span><span>' + (state.startId===loc.id ? '출발지 해제' : '출발지 설정') + '</span></button>' +
+          '<button class="icon-btn' + (state.endId===loc.id ? ' active' : '') + '" data-setend="' + loc.id + '"><span class="icon-btn-ico">🏁</span><span>' + (state.endId===loc.id ? '도착지 해제' : '도착지 설정') + '</span></button>' +
+        '</div>' +
         '<div class="card-actions">' +
-          '<button class="btn-ghost btn-sm" data-setstart="' + loc.id + '">' + (state.startId===loc.id ? '🚩 출발지 해제' : '🚩 출발지로 설정') + '</button>' +
-          '<button class="btn-ghost btn-sm" data-setend="' + loc.id + '">' + (state.endId===loc.id ? '🏁 도착지 해제' : '🏁 도착지로 설정') + '</button>' +
           '<button class="btn-ghost btn-sm" data-edit="' + loc.id + '">수정</button><button class="btn-danger btn-sm" data-del="' + loc.id + '">삭제</button></div>';
       grid.appendChild(el);
     });
