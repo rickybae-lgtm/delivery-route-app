@@ -720,9 +720,13 @@
     var startLoc = state.startId ? locById(state.startId) : null;
     var endLoc = state.endId ? locById(state.endId) : null;
     if (startEndEl){
-      startEndEl.innerHTML = '출발지: <b>' + (startLoc ? escapeHtml(startLoc.name) : '미설정') + '</b> · 도착지: <b>' +
-        (endLoc ? escapeHtml(endLoc.name) : (startLoc ? escapeHtml(startLoc.name) + ' (출발지와 동일)' : '미설정')) +
-        '</b> — <a href="#" id="gotoListTabLink">변경 →</a>';
+      startEndEl.innerHTML =
+        '<div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">' +
+          '<div>출발지: <b>' + (startLoc ? escapeHtml(startLoc.name) : '미설정') + '</b> · 도착지: <b>' +
+            (endLoc ? escapeHtml(endLoc.name) : (startLoc ? escapeHtml(startLoc.name) + ' (출발지와 동일)' : '미설정')) +
+          '</b></div>' +
+          '<a class="icon-btn" href="#" id="gotoListTabLink" style="flex:0 0 auto;"><span class="icon-btn-ico">🔁</span><span>변경</span></a>' +
+        '</div>';
       var gotoLink = document.getElementById('gotoListTabLink');
       if (gotoLink) gotoLink.addEventListener('click', function(e){ e.preventDefault(); switchTab('listCard'); });
     }
