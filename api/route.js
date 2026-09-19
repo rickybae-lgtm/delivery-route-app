@@ -159,7 +159,7 @@ function localSearchMinFinish(initialOrder, durations, distances, openSecs, depa
   let order = initialOrder.slice();
   let bestCost = scheduleCost(order, durations, distances, openSecs, departSec, dwellSec, returnToStart);
   let improved = true, iter = 0;
-  while (improved && iter < 60) {
+  while (improved && iter < 40) {
     improved = false; iter++;
     for (let i = 0; i < order.length - 1; i++) {
       for (let j = i + 1; j < order.length; j++) {
@@ -168,13 +168,18 @@ function localSearchMinFinish(initialOrder, durations, distances, openSecs, depa
         if (cost < bestCost - 1e-6) { order = cand; bestCost = cost; improved = true; }
       }
     }
-    for (let i = 0; i < order.length; i++) {
-      const node = order[i];
-      const without = order.slice(0, i).concat(order.slice(i + 1));
-      for (let k = 0; k <= without.length; k++) {
-        const cand = without.slice(0, k).concat([node]).concat(without.slice(k));
-        const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart);
-        if (cost < bestCost - 1e-6) { order = cand; bestCost = cost; improved = true; }
+    // or-opt: 한 곳(길이 1)뿐 아니라 두세 곳을 묶어서(길이 2, 3) 통째로 다른 자리에 옮겨보는 것도
+    // 시도함. 한 곳만 옮겨서는 개선이 안 보여도, 붙어있는 여러 곳을 통째로 옮기면(예: 같은 동네
+    // 몇 곳을 한 번에 뒤로 미뤄서 오픈시간 대기를 줄이는 경우) 개선되는 경우가 있어서.
+    for (let segLen = 1; segLen <= 3; segLen++) {
+      for (let i = 0; i + segLen <= order.length; i++) {
+        const segment = order.slice(i, i + segLen);
+        const without = order.slice(0, i).concat(order.slice(i + segLen));
+        for (let k = 0; k <= without.length; k++) {
+          const cand = without.slice(0, k).concat(segment).concat(without.slice(k));
+          const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart);
+          if (cost < bestCost - 1e-6) { order = cand; bestCost = cost; improved = true; }
+        }
       }
     }
   }
@@ -366,7 +371,7 @@ module.exports = async (req, res) => {
         // 1) 오픈시간 없는 곳들만으로 순수 최단동선 뼈대를 만듦 (거리/시간만 기준, 대기 없음)
         let skeleton = nearestNeighborOrderSubset(untimedNodes, table.durations);
         if (untimedNodes.length > 1) {
-          skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 8).order;
+          skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 6).order;
         }
 
         // 2) 오픈시간 있는 곳들을 마감시간이 이른 순서대로, 뼈대 안에서
@@ -385,7 +390,7 @@ module.exports = async (req, res) => {
         //      대상으로 한 번 더 다듬어줌 — 오픈시간 자체(대기 포함)는 그대로 존중하면서,
         //      전체 이동거리/시간이 줄어드는 자리가 있으면 옮겨준다.
         if (skeleton.length > 2) {
-          skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 8).order;
+          skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 6).order;
         }
 
         // 2.6) 오픈시간 있는 곳이 2곳 이상이면, 2)번의 "하나씩 순서대로 끼워 넣기"는
@@ -403,7 +408,7 @@ module.exports = async (req, res) => {
               if (reinserted.join(',') !== skeleton.join(',')) changedInPass = true;
               skeleton = reinserted;
             });
-            skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 4).order;
+            skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 3).order;
             if (!changedInPass) break;
           }
         }
