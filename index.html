@@ -772,15 +772,17 @@
     var moving = seq[idx];
     var tmp = seq[idx]; seq[idx]=seq[j]; seq[j]=tmp;
     // 수동 배정 모드에서는 옮긴 곳만 그 자리로 움직이고, 나머지는 절대 자동으로 재배치하지 않음.
-    if (state.order.manualMode){ recalcLegsForCurrentOrder(); return; }
-    if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { recalcLegsForCurrentOrder(); }
+    // 화면(길찾기 링크 포함)은 서버에서 새 거리를 받아오기 전에 일단 새 순서로 바로 다시 그려서,
+    // 통신하는 짧은 순간에 길찾기 버튼을 눌러도 옛날 순서가 걸리는 일이 없게 함.
+    if (state.order.manualMode){ renderRoute(); recalcLegsForCurrentOrder(); return; }
+    if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { renderRoute(); recalcLegsForCurrentOrder(); }
   }
   function moveStopToEnd(idx){
     var seq = state.order.seq;
     var moving = seq[idx];
     seq.push(seq.splice(idx,1)[0]);
-    if (state.order.manualMode){ recalcLegsForCurrentOrder(); return; }
-    if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { recalcLegsForCurrentOrder(); }
+    if (state.order.manualMode){ renderRoute(); recalcLegsForCurrentOrder(); return; }
+    if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { renderRoute(); recalcLegsForCurrentOrder(); }
   }
 
   function estimateSchedule(departMin, seq, legs){
