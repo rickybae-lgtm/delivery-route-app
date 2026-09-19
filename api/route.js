@@ -406,7 +406,7 @@ module.exports = async (req, res) => {
         //    예전에는 이걸 직접 짠 nearest-neighbor로 대충 흉내냈는데, 그러다 보니
         //    "최단거리" 탭이 보여주는 진짜 최적 동선과 미묘하게 달라져서 뼈대 자체가
         //    어긋나는 문제가 있었다. 이제 완전히 같은 엔진을 쓰므로 절대 어긋나지 않는다.
-        const tripPoints0 = endPt ? points.concat([endPt]) : points;
+        const tripPoints0 = points; // points에 이미 (있다면) endPt까지 포함되어 있음
         const tripUrl0 = 'https://router.project-osrm.org/trip/v1/driving/' + coordStr(tripPoints0) +
           '?source=first' + (endPt ? '&destination=last&roundtrip=false' : ('&roundtrip=' + (returnToStart ? 'true' : 'false'))) +
           '&steps=false&overview=false';
