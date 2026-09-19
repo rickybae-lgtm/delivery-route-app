@@ -388,6 +388,26 @@ module.exports = async (req, res) => {
           skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 8).order;
         }
 
+        // 2.6) 오픈시간 있는 곳이 2곳 이상이면, 2)번의 "하나씩 순서대로 끼워 넣기"는
+        //      먼저 넣은 곳이 나중에 넣은 곳 사정을 모른 채 자리를 잡는다는 한계가 있음.
+        //      그래서 오픈시간 있는 곳들을 하나씩 다시 빼서, 지금까지 확정된 전체 상황을 보고
+        //      제일 좋은 자리에 다시 끼워 넣는 걸 몇 번 반복해서 수렴시킴. 이러면 대기가 여러
+        //      곳에 흩어지지 않고, 어차피 대기가 필요하다면 자연스럽게 제일 마지막 오픈시간
+        //      지점 쪽으로 몰리게 된다(중간에 대기해서 그 뒤 일정이 전부 늦어지는 걸 피함).
+        if (timedNodes.length > 1) {
+          for (let pass = 0; pass < 3; pass++) {
+            let changedInPass = false;
+            timedNodes.forEach(function (node) {
+              const without = skeleton.filter(function (x) { return x !== node; });
+              const reinserted = bestInsertionBeforeOpen(without, node, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, OPEN_BUFFER_SEC);
+              if (reinserted.join(',') !== skeleton.join(',')) changedInPass = true;
+              skeleton = reinserted;
+            });
+            skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 4).order;
+            if (!changedInPass) break;
+          }
+        }
+
         // 3) 같은 주소(=사실상 같은 좌표)에 등록된 배달처들은 절대 흩어지지 않게 함.
         //    2)번 단계에서 오픈시간 있는 곳을 끼워 넣다 보면, 같은 건물 안 여러 거래처
         //    사이에 다른 곳이 끼어드는 경우가 생길 수 있어서(예: 3곳 중 2곳만 몰고
