@@ -120,6 +120,30 @@ function bestInsertionBeforeOpen(skeleton, node, durations, distances, openSecs,
   return skeleton.slice(0, bestPos).concat([node]).concat(skeleton.slice(bestPos));
 }
 
+// bestInsertionBeforeOpen의 "묶음(segment)" 버전. 같은 주소라 함께 붙어 다녀야 하는
+// 오픈시간 지점들을 하나의 덩어리로 취급해서, skeleton의 모든 자리에 넣어보고
+// 실제 총 소요시간(scheduleCost, 대기 포함)이 제일 짧은 자리를 그대로 고른다.
+// 순수 거리만 보는 뼈대와 달리, 여기서는 "이 자리에 넣으면 대기가 얼마나 생기는지"까지
+// 정확히 계산해서 비교하기 때문에, 대기를 감수하는 것과 다른 곳을 먼저 들르고 오는 것 중
+// 실제로 더 빠른 쪽이 자동으로 선택된다.
+function bestInsertionSegmentBeforeOpen(skeleton, segment, durations, distances, openSecs, departSec, dwellSec, returnToStart, bufferSec) {
+  let bestPos = 0, bestCost = Infinity;
+  for (let k = 0; k <= skeleton.length; k++) {
+    const cand = skeleton.slice(0, k).concat(segment).concat(skeleton.slice(k));
+    const raw = rawArrivalTimes(cand, durations, dwellSec, departSec, openSecs);
+    let missBuffer = 0;
+    segment.forEach(function (node, idx) {
+      const openSec = openSecs[node];
+      if (openSec == null) return;
+      const target = openSec - bufferSec;
+      missBuffer += Math.max(0, raw[k + idx] - target);
+    });
+    const cost = scheduleCost(cand, durations, distances, openSecs, departSec, dwellSec, returnToStart) + missBuffer;
+    if (cost < bestCost - 1e-9) { bestCost = cost; bestPos = k; }
+  }
+  return skeleton.slice(0, bestPos).concat(segment).concat(skeleton.slice(bestPos));
+}
+
 function nearestNeighborOrder(n, durations) {
   const nodeList = []; for (let i = 1; i <= n; i++) nodeList.push(i);
   return nearestNeighborOrderSubset(nodeList, durations);
@@ -359,36 +383,66 @@ module.exports = async (req, res) => {
         // endIdx: 0=출발지로 복귀, n+1=별도 지정한 도착지, null=복귀 없음
         const endIdx = endPt ? (n + 1) : (returnToStart ? 0 : null);
 
-        // ---- 새 방식(사용자 지시 반영): 오픈시간을 아예 무시한 "순수 최단동선"을
-        //      전체 지점(오픈시간 있는 곳 포함) 기준으로 먼저 만들고, 그 동선은 그대로 둔 채
-        //      오픈시간 제약만 나중에 끼워 맞춘다(=필요하면 그 자리에서 대기).
-        //      별도의 "끼워넣기" 탐색을 하지 않기 때문에, 동선 자체가 부자연스럽게
-        //      틀어지는 일이 없고, 대기는 실제 그 동선을 그대로 운행했을 때 자연스럽게
-        //      발생하는 자리에서만 생긴다.
-        const timedNodes = [];
-        for (let i = 1; i <= n; i++) { if (openSecs[i] != null) timedNodes.push(i); }
-        const noOpenSecs = openSecs.map(function () { return null; });
-
-        // 1) 오픈시간을 완전히 무시하고, 전체 지점(모두 포함) 기준 순수 최단동선을 만듦.
-        let skeleton = nearestNeighborOrder(n, table.durations);
-        if (n > 2) {
-          skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, noOpenSecs, departSec, dwellSec, endIdx, 8).order;
+        // ---- 새 방식: 오픈시간 없는 곳들만으로 순수 최단동선 뼈대를 만들고,
+        //      오픈시간 있는 곳(같은 주소면 한 덩어리로 묶어서)을 그 뼈대의
+        //      "모든 자리"에 실제로 넣어보고 총 소요시간이 제일 짧은 자리를 그대로 선택한다.
+        //      이러면 "대기를 감수하는 것"과 "다른 곳 먼저 들르고 오는 것" 중 실제로
+        //      더 빠른 쪽이 계산으로 결정되고, 뼈대 자체를 억지로 고정하지 않는다.
+        function coordKey(pt) { return pt.lat.toFixed(5) + ',' + pt.lng.toFixed(5); }
+        const groupMap = {};
+        for (let i = 1; i <= n; i++) {
+          const key = coordKey(stops[i - 1]);
+          (groupMap[key] = groupMap[key] || []).push(i);
         }
+        const allBlocks = Object.keys(groupMap).map(function (k) { return groupMap[k]; });
+        const untimedBlocks = [], timedBlocks = [];
+        allBlocks.forEach(function (block) {
+          const hasTimed = block.some(function (node) { return openSecs[node] != null; });
+          (hasTimed ? timedBlocks : untimedBlocks).push(block);
+        });
 
-        // 2) 이제 실제 오픈시간을 적용해서 한 번만 다듬는다. 동선 뼈대 자체는 이미
-        //    최단으로 짜여 있으므로, 여기서는 "정말 필요한 미세 조정"만 일어나고
-        //    (예: 순서가 거의 동일한 두 배치 중 대기가 덜 발생하는 쪽 선택),
-        //    scheduleCost의 earlyWaitS 항목 덕분에 어차피 대기가 필요하다면
-        //    제일 마지막 오픈시간 지점 쪽으로 자연스럽게 몰린다.
-        if (timedNodes.length > 0 && n > 2) {
-          skeleton = localSearchWithRestarts(skeleton, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, 6).order;
-        }
+        // 1) 오픈시간을 완전히 무시하고, 전체 지점(오픈시간 있는 곳 포함) 기준으로
+        //    "진짜 순수 최단동선"을 만든다 — 이게 "최단거리 검색"에서 나오는 것과 같은
+        //    뼈대다. 이렇게 해야 잠실처럼 오픈시간 있는 지점(10번) 덕분에 그 동네
+        //    전체가 가깝게 묶이는 지리적 사실이 그대로 반영된다(오픈시간 있는 곳만
+        //    쏙 빼고 계산하면 그 근접성 정보가 사라져서 엉뚱한 뼈대가 나옴).
+        //    출발지=복귀지라 닫힌 루프라서 2-opt 등으로 다듬지 않고 nearest-neighbor
+        //    구성 순서를 그대로 써서 항상 출발지에서 가까운 쪽부터 시작하게 한다.
+        const allReps = allBlocks.map(function (b) { return b[0]; });
+        const allRepOrder = nearestNeighborOrderSubset(allReps, table.durations);
+        const allRepToBlock = {};
+        allBlocks.forEach(function (b) { allRepToBlock[b[0]] = b; });
+        let fullTour = [];
+        allRepOrder.forEach(function (rep) { fullTour = fullTour.concat(allRepToBlock[rep]); });
+
+        // 오픈시간 있는 블록만 이 뼈대에서 도로 빼낸다. 오픈시간 없는 지점들의
+        // 상대적인 순서(예: 9번이 앞쪽에 있던 것)는 그대로 유지된다.
+        const timedNodeSet = {};
+        timedBlocks.forEach(function (block) { block.forEach(function (node) { timedNodeSet[node] = true; }); });
+        let skeleton = fullTour.filter(function (node) { return !timedNodeSet[node]; });
+
+        // 2) 오픈시간 있는 블록들을, 오픈시간이 이른 순서대로, 뼈대의 모든 자리에
+        //    실제로 넣어보고 총 소요시간이 제일 짧은 자리를 선택해서 끼워 넣는다.
+        const OPEN_BUFFER_SEC = 10 * 60;
+        timedBlocks.sort(function (a, b) {
+          const openA = Math.min.apply(null, a.filter(function (x) { return openSecs[x] != null; }).map(function (x) { return openSecs[x]; }));
+          const openB = Math.min.apply(null, b.filter(function (x) { return openSecs[x] != null; }).map(function (x) { return openSecs[x]; }));
+          return openA - openB;
+        });
+        timedBlocks.forEach(function (block) {
+          skeleton = bestInsertionSegmentBeforeOpen(skeleton, block, table.durations, table.distances, openSecs, departSec, dwellSec, endIdx, OPEN_BUFFER_SEC);
+        });
+
+        // 2.5) (의도적으로 생략) 전에는 여기서 전체 순서를 2-opt로 한 번 더 다듬었는데,
+        //      이게 오픈시간 있는 지점의 대기를 줄이려고 애초에 잡아둔 "최단거리 뼈대"
+        //      자체를 통째로 뒤집어버리는 부작용이 있었다(예: 잠실을 먼저 들르는 뼈대를
+        //      버리고 신사동부터 도는 걸로 바꿔버림). 뼈대는 1)번에서 이미 최단으로
+        //      정해졌고, 오픈시간 지점은 2)번에서 이미 제일 좋은 자리로 넣었으므로,
+        //      여기서 더 손대지 않고 그대로 둔다.
 
         // 3) 같은 주소(=사실상 같은 좌표)에 등록된 배달처들은 절대 흩어지지 않게 함
-        //    (오픈시간 있는 곳도 포함 — 같은 건물에 오픈시간 있는 곳과 없는 곳이 섞여 있어도
-        //    한 그룹으로 묶어서 방문한다).
+        //    (2.5의 미세 조정 과정에서 혹시라도 벌어졌을 경우를 대비한 안전장치).
         let order = skeleton;
-        function coordKey(pt) { return pt.lat.toFixed(5) + ',' + pt.lng.toFixed(5); }
         const sameAddrGroups = {};
         for (let i = 1; i <= n; i++) {
           const key = coordKey(stops[i - 1]);
