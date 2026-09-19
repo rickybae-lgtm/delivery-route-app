@@ -401,19 +401,25 @@ module.exports = async (req, res) => {
           (hasTimed ? timedBlocks : untimedBlocks).push(block);
         });
 
-        // 1) 오픈시간을 완전히 무시하고, 전체 지점(오픈시간 있는 곳 포함) 기준으로
-        //    "진짜 순수 최단동선"을 만든다 — 이게 "최단거리 검색"에서 나오는 것과 같은
-        //    뼈대다. 이렇게 해야 잠실처럼 오픈시간 있는 지점(10번) 덕분에 그 동네
-        //    전체가 가깝게 묶이는 지리적 사실이 그대로 반영된다(오픈시간 있는 곳만
-        //    쏙 빼고 계산하면 그 근접성 정보가 사라져서 엉뚱한 뼈대가 나옴).
-        //    출발지=복귀지라 닫힌 루프라서 2-opt 등으로 다듬지 않고 nearest-neighbor
-        //    구성 순서를 그대로 써서 항상 출발지에서 가까운 쪽부터 시작하게 한다.
-        const allReps = allBlocks.map(function (b) { return b[0]; });
-        const allRepOrder = nearestNeighborOrderSubset(allReps, table.durations);
-        const allRepToBlock = {};
-        allBlocks.forEach(function (b) { allRepToBlock[b[0]] = b; });
-        let fullTour = [];
-        allRepOrder.forEach(function (rep) { fullTour = fullTour.concat(allRepToBlock[rep]); });
+        // 1) 오픈시간을 완전히 무시하고, "최단거리" 모드와 완전히 똑같은 방식(OSRM의
+        //    trip 엔진 자체)으로 전체 지점(오픈시간 있는 곳 포함) 순수 최단동선을 만든다.
+        //    예전에는 이걸 직접 짠 nearest-neighbor로 대충 흉내냈는데, 그러다 보니
+        //    "최단거리" 탭이 보여주는 진짜 최적 동선과 미묘하게 달라져서 뼈대 자체가
+        //    어긋나는 문제가 있었다. 이제 완전히 같은 엔진을 쓰므로 절대 어긋나지 않는다.
+        const tripPoints0 = endPt ? points.concat([endPt]) : points;
+        const tripUrl0 = 'https://router.project-osrm.org/trip/v1/driving/' + coordStr(tripPoints0) +
+          '?source=first' + (endPt ? '&destination=last&roundtrip=false' : ('&roundtrip=' + (returnToStart ? 'true' : 'false'))) +
+          '&steps=false&overview=false';
+        const tripRes0 = await osrmGet(tripUrl0);
+        if (tripRes0.code !== 'Ok') {
+          return res.status(502).json({ error: 'osrm_error', detail: tripRes0.code, message: tripRes0.message || '' });
+        }
+        const endInputIdx0 = endPt ? tripPoints0.length - 1 : -1;
+        let fullTour = tripRes0.waypoints
+          .map(function (w, i) { return { inputIndex: i, tripIndex: w.waypoint_index }; })
+          .filter(function (w) { return w.inputIndex !== 0 && w.inputIndex !== endInputIdx0; })
+          .sort(function (a, b) { return a.tripIndex - b.tripIndex; })
+          .map(function (w) { return w.inputIndex; }); // points 배열 기준 인덱스 = stops 기준으로는 그대로 1..n (start가 0번이라 동일)
 
         // 오픈시간 있는 블록만 이 뼈대에서 도로 빼낸다. 오픈시간 없는 지점들의
         // 상대적인 순서(예: 9번이 앞쪽에 있던 것)는 그대로 유지된다.
