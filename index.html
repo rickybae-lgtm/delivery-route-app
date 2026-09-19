@@ -133,6 +133,11 @@
   .done-check{ display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:var(--ink-soft); flex:none; }
   .done-check input{ width:18px; height:18px; accent-color:var(--accent); }
   .order-num{ font-family:"Black Han Sans",sans-serif; font-size:24px; color:var(--accent); flex:none; width:30px; text-align:center; line-height:1.3; }
+  input.order-num-input{ -moz-appearance:textfield; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; width:38px; height:32px; padding:0; }
+  input.order-num-input::-webkit-outer-spin-button, input.order-num-input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  .drag-handle{ flex:none; width:28px; height:36px; border:none; background:none; color:var(--muted); font-size:18px; cursor:grab; touch-action:none; padding:0; }
+  .stop-card.dragging{ opacity:0.4; }
+  .stop-card.drag-over{ box-shadow:0 0 0 2px var(--accent) inset; }
   .stop-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }
   .stop-top{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .stop-name{ font-weight:700; font-size:15.5px; }
@@ -784,6 +789,20 @@
     if (state.order.manualMode){ renderRoute(); recalcLegsForCurrentOrder(); return; }
     if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { renderRoute(); recalcLegsForCurrentOrder(); }
   }
+  // idx번째(0-base) 지점을 목표 순번(targetPos1, 1-base 사용자 입력값)으로 바로 옮김.
+  // 화살표를 여러 번 누르지 않고, 순번을 직접 타이핑해서 한 번에 이동시키기 위한 함수.
+  function moveStopTo(idx, targetPos1){
+    var seq = state.order.seq;
+    var targetIdx = targetPos1 - 1;
+    if (isNaN(targetIdx)) { renderRoute(); return; }
+    if (targetIdx < 0) targetIdx = 0;
+    if (targetIdx > seq.length - 1) targetIdx = seq.length - 1;
+    if (targetIdx === idx) { renderRoute(); return; }
+    var moving = seq.splice(idx, 1)[0];
+    seq.splice(targetIdx, 0, moving);
+    if (state.order.manualMode){ renderRoute(); recalcLegsForCurrentOrder(); return; }
+    if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { renderRoute(); recalcLegsForCurrentOrder(); }
+  }
 
   function estimateSchedule(departMin, seq, legs){
     var cur = departMin, out = [];
@@ -1125,8 +1144,11 @@
 
       var card2 = document.createElement('div');
       card2.className = 'stop-card' + (isDone ? ' done' : '') + (isNext ? ' next' : '');
+      card2.dataset.cardidx = i;
       card2.innerHTML =
-        '<div class="order-num">' + (i+1) + '</div>' +
+        '<button class="drag-handle" type="button" data-draghandle="' + i + '" title="눌러서 드래그하면 순서를 바로 옮길 수 있습니다">⠿</button>' +
+        '<input class="order-num order-num-input" type="number" inputmode="numeric" min="1" max="' + schedule.length + '" ' +
+          'value="' + (i+1) + '" data-moveto="' + i + '" title="순번을 직접 입력하면 그 자리로 바로 이동합니다">' +
         '<div class="move-btns">' +
           '<button class="btn-ghost" data-up="'+i+'" ' + (i===0?'disabled':'') + '>▲</button>' +
           '<button class="btn-ghost" data-down="'+i+'" ' + (i===schedule.length-1?'disabled':'') + '>▼</button>' +
@@ -1194,6 +1216,56 @@
     list.querySelectorAll('[data-up]').forEach(function(b){ b.addEventListener('click', function(){ moveStop(parseInt(this.dataset.up,10), -1); }); });
     list.querySelectorAll('[data-down]').forEach(function(b){ b.addEventListener('click', function(){ moveStop(parseInt(this.dataset.down,10), 1); }); });
     list.querySelectorAll('[data-toend]').forEach(function(b){ b.addEventListener('click', function(){ moveStopToEnd(parseInt(this.dataset.toend,10)); }); });
+    list.querySelectorAll('[data-moveto]').forEach(function(inp){
+      inp.addEventListener('change', function(){ moveStopTo(parseInt(this.dataset.moveto,10), parseInt(this.value,10)); });
+      inp.addEventListener('click', function(){ this.select(); });
+    });
+    // 드래그 핸들(⠿)을 손가락/마우스로 눌러서 원하는 자리로 끌어다 놓기.
+    // 화면에 안 보이는 먼 자리로 끌면 자동으로 스크롤되게 해서, 리스트가 길어도 옮길 수 있게 함.
+    list.querySelectorAll('[data-draghandle]').forEach(function(handle){
+      handle.addEventListener('pointerdown', function(e){
+        e.preventDefault();
+        var fromIdx = parseInt(this.dataset.draghandle, 10);
+        var card = this.closest('.stop-card');
+        card.classList.add('dragging');
+        var currentOverIdx = fromIdx;
+        var autoScrollTimer = null;
+
+        function clearOverClasses(){
+          list.querySelectorAll('.stop-card.drag-over').forEach(function(c){ c.classList.remove('drag-over'); });
+        }
+        function updateAutoScroll(clientY){
+          var margin = 60;
+          var rect = list.getBoundingClientRect();
+          if (autoScrollTimer) { clearInterval(autoScrollTimer); autoScrollTimer = null; }
+          if (clientY < margin) {
+            autoScrollTimer = setInterval(function(){ window.scrollBy(0, -12); }, 16);
+          } else if (clientY > window.innerHeight - margin) {
+            autoScrollTimer = setInterval(function(){ window.scrollBy(0, 12); }, 16);
+          }
+        }
+        function onMove(ev){
+          updateAutoScroll(ev.clientY);
+          var el = document.elementFromPoint(ev.clientX, ev.clientY);
+          var overCard = el && el.closest ? el.closest('.stop-card[data-cardidx]') : null;
+          clearOverClasses();
+          if (overCard) {
+            currentOverIdx = parseInt(overCard.dataset.cardidx, 10);
+            if (overCard !== card) overCard.classList.add('drag-over');
+          }
+        }
+        function onUp(){
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', onUp);
+          if (autoScrollTimer) { clearInterval(autoScrollTimer); autoScrollTimer = null; }
+          card.classList.remove('dragging');
+          clearOverClasses();
+          if (currentOverIdx !== fromIdx) moveStopTo(fromIdx, currentOverIdx + 1);
+        }
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+      });
+    });
     list.querySelectorAll('[data-photoshare]').forEach(function(b){
       b.addEventListener('click', function(){
         var idx = parseInt(this.dataset.photoshare,10);
