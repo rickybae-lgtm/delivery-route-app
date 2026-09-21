@@ -362,7 +362,7 @@ module.exports = async (req, res) => {
       const start = body.start;
       const stops = Array.isArray(body.stops) ? body.stops : [];
       const departMin = typeof body.departMin === 'number' ? body.departMin : 180;
-      const dwellMin = typeof body.dwellMin === 'number' ? body.dwellMin : 5;
+      const dwellMin = typeof body.dwellMin === 'number' ? body.dwellMin : 15;
 
       if (!start || typeof start.lat !== 'number' || typeof start.lng !== 'number') {
         return res.status(400).json({ error: 'missing_start' });
