@@ -947,11 +947,14 @@
       var canvas, ctx, W, totalH, barH;
       if (imgs.length === 1){
         // 사진이 1장이면 자르지 않고 원본 비율 그대로, 폭만 안전한 크기로 제한.
+        // 글씨 바(帶)는 사진 위에 겹쳐 그리지 않고, 사진 아래에 캔버스를 그만큼 더 늘려서
+        // 따로 붙인다 — 겹쳐 그리면 그 부분만큼 사진이 검게 가려져서 "사진 밑이 잘린" 것처럼
+        // 보이는 문제가 있었음.
         var im0 = imgs[0];
         W = Math.min(im0.w, 700);
         var h0 = Math.round(im0.h * (W / im0.w));
         barH = Math.max(64, Math.round(W * 0.13));
-        totalH = h0;
+        totalH = h0 + barH;
         canvas = document.createElement('canvas');
         canvas.width = W; canvas.height = totalH;
         ctx = canvas.getContext('2d');
@@ -991,7 +994,8 @@
           if (im.bitmap && im.src.close) im.src.close();
         });
       }
-      ctx.fillStyle = 'rgba(0,0,0,0.65)';
+      // 이제 사진 위에 겹치는 게 아니라 사진 아래 별도 공간이라, 반투명일 필요 없이 꽉 채워도 됨.
+      ctx.fillStyle = '#000000';
       ctx.fillRect(0, totalH - barH, W, barH);
       var fontSize = Math.max(30, Math.round(barH * 0.46));
       ctx.font = 'bold ' + fontSize + 'px "Apple SD Gothic Neo","Malgun Gothic",sans-serif';
