@@ -961,17 +961,26 @@
         ctx.drawImage(im0.src, 0, 0, W, h0);
         if (im0.bitmap && im0.src.close) im0.src.close();
       } else {
-        // 사진이 2장 이상이면, 사진 개수에 따라 캔버스가 한없이 커지지 않도록
-        // 정사각형 칸(격자)에 맞춰 가운데를 크롭해서 배치함. 칸 크기가 고정이라
-        // 사진이 몇 장이든(3장, 4장...) 캔버스 크기가 예측 가능한 범위 안에 있고,
-        // 예전처럼 세로로 쭉 이어붙이던 방식보다 사진과 글씨가 카톡 화면에서 더 크게 보임.
-        // (예전 방식은 사진이 늘어날수록 세로로 길쭉해져서, 카톡이 통째로 축소해 보여주는
-        // 바람에 사진도 글씨도 작아지고, 일부 기기에선 캔버스가 너무 커져 아예 안 그려졌음.)
+        // 사진이 2장 이상이면 줄(row)마다 최대 2장씩 나눠 배치함.
+        // 예전엔 정사각형 칸에 억지로 맞추다 보니(칸을 꽉 채우려고 자르거나, 안 자르면
+        // 사진 위아래/양옆에 어색한 검은 여백이 생김) 사진끼리 이어붙였을 때 부자연스러웠음.
+        // 그래서 "높이를 맞춰서 나란히 붙이는" 방식(신문/갤러리에서 흔한 justified 방식)으로
+        // 바꿈: 같은 줄의 사진들은 높이를 동일하게 맞추고, 그 높이에서 원래 비율대로 폭을
+        // 계산해서 옆으로 딱 붙임 — 자르지도 않고, 검은 여백도 생기지 않음.
         var cols = imgs.length <= 2 ? imgs.length : 2;
-        var rows = Math.ceil(imgs.length / cols);
-        var CELL = Math.max(140, Math.round(360 * scale));
-        W = cols * CELL + GAP * (cols - 1);
-        var gridH = rows * CELL + GAP * (rows - 1);
+        var rowCount = Math.ceil(imgs.length / cols);
+        // 목표 캔버스 폭(줄마다 동일). scale은 재시도 시 더 작아짐.
+        W = Math.max(320, Math.round(680 * scale));
+        var rowsData = [];
+        for (var r = 0; r < rowCount; r++){
+          var rowImgs = imgs.slice(r * cols, r * cols + cols);
+          var sumAspect = 0;
+          rowImgs.forEach(function(im){ sumAspect += im.w / im.h; });
+          var rowH = Math.round((W - GAP * (rowImgs.length - 1)) / sumAspect);
+          rowH = Math.max(90, rowH);
+          rowsData.push({ imgs: rowImgs, h: rowH });
+        }
+        var gridH = rowsData.reduce(function(sum, rd){ return sum + rd.h; }, 0) + GAP * (rowsData.length - 1);
         barH = Math.max(70, Math.round(W * 0.11));
         totalH = gridH + barH;
         canvas = document.createElement('canvas');
@@ -979,17 +988,17 @@
         ctx = canvas.getContext('2d');
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, W, totalH);
-        imgs.forEach(function(im, i){
-          var col = i % cols, row = Math.floor(i / cols);
-          var cx = col * (CELL + GAP), cy = row * (CELL + GAP);
-          // 예전엔 칸을 꽉 채우려고 사진을 정사각형에 맞춰 잘라냈는데(가운데만 남기고 위아래/양옆
-          // 잘림), 그러다 보니 사진 끄트머리가 잘려 보이는 문제가 있었음. 그래서 사진을 자르지
-          // 않고 칸 안에 통째로 들어가게(꽉 안 차도 전체가 다 보이게) 바꿈 — Math.min으로 계산.
-          var scale = Math.min(CELL / im.w, CELL / im.h);
-          var dw = im.w * scale, dh = im.h * scale;
-          var dx = cx + (CELL - dw) / 2, dy = cy + (CELL - dh) / 2;
-          ctx.drawImage(im.src, dx, dy, dw, dh);
-          if (im.bitmap && im.src.close) im.src.close();
+        var cy = 0;
+        rowsData.forEach(function(rd){
+          var cx = 0;
+          rd.imgs.forEach(function(im){
+            var dw = Math.round(rd.h * (im.w / im.h));
+            var dh = rd.h;
+            ctx.drawImage(im.src, cx, cy, dw, dh);
+            if (im.bitmap && im.src.close) im.src.close();
+            cx += dw + GAP;
+          });
+          cy += rd.h + GAP;
         });
       }
       // 이제 사진 위에 겹치는 게 아니라 사진 아래 별도 공간이라, 반투명일 필요 없이 꽉 채워도 됨.
