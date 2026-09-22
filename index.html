@@ -866,6 +866,27 @@
   var pendingPhotoShareItems = []; // [{file, url}, ...] — 원본(글씨 새기기 전) 사진들
   var pendingPhotoShareRetry = 0; // 실패할 때마다 늘려서 다음 시도 땐 더 작은 크기로 처리함
 
+  // "카톡으로 보내기"를 누른 그 순간부터 사진 합성(글씨 새기기)을 시작하면, 합성이 끝나기까지
+  // 걸리는 시간(사진 처리 중 비동기 작업) 때문에 일부 폰/브라우저에서 "방금 사용자가 누른
+  // 동작"이라는 인식이 끊겨서 navigator.share()가 곧바로 NotAllowedError로 막히는 경우가 있다.
+  // 그래서 사진을 찍거나 뺄 때마다 미리(버튼을 누르기 전부터) 백그라운드에서 합성해두고,
+  // 버튼을 누른 순간에는 "이미 다 준비된 결과"를 거의 바로 써서 share() 호출이 클릭 시점과
+  // 최대한 가깝게 이어지도록 한다.
+  var photoComposeCache = null; // { key, promise }
+  function composeCacheKey(){
+    return pendingPhotoShareItems.map(function(it){ return it.file.name + '_' + it.file.size; }).join(',') +
+      '|' + pendingPhotoShareLabel + '|' + pendingPhotoShareRetry;
+  }
+  function warmComposeCache(){
+    if (!pendingPhotoShareItems.length){ photoComposeCache = null; return; }
+    var key = composeCacheKey();
+    if (photoComposeCache && photoComposeCache.key === key) return; // 이미 준비 중이거나 완료됨
+    var files = pendingPhotoShareItems.map(function(it){ return it.file; });
+    var label = pendingPhotoShareLabel;
+    var retry = pendingPhotoShareRetry;
+    photoComposeCache = { key: key, promise: composeAndStampPhotos(files, label, retry).catch(function(){ return null; }) };
+  }
+
   // 사진 파일을 화면에 그릴 수 있는 소스(ImageBitmap 또는 Image)로 변환.
   // (EXIF 방향 정보 때문에 사진이 옆으로 눕는 걸 막기 위해, 가능하면
   // createImageBitmap({imageOrientation:'from-image'})로 방향을 먼저 바로잡음)
@@ -917,8 +938,8 @@
     // 카톡으로 보내기엔 충분하면서 훨씬 가벼운 크기로 줄여서 처리함.
     // shrink(0,1,2...)는 실패해서 재시도할 때마다 한 단계씩 더 작게 줄이기 위한 값.
     var scale = Math.pow(0.7, shrink || 0);
-    var baseDim = files.length === 1 ? 900 : 600;
-    var maxDim = Math.max(280, Math.round(baseDim * scale));
+    var baseDim = files.length === 1 ? 700 : 480; // 해상도를 더 낮춰서 처리 속도를 높이고 실패 확률을 더 줄임
+    var maxDim = Math.max(240, Math.round(baseDim * scale));
     return loadImagesSequential(files, maxDim).then(function(imgs){
       imgs = imgs.filter(Boolean);
       if (!imgs.length) return null;
@@ -927,7 +948,7 @@
       if (imgs.length === 1){
         // 사진이 1장이면 자르지 않고 원본 비율 그대로, 폭만 안전한 크기로 제한.
         var im0 = imgs[0];
-        W = Math.min(im0.w, 900);
+        W = Math.min(im0.w, 700);
         var h0 = Math.round(im0.h * (W / im0.w));
         barH = Math.max(64, Math.round(W * 0.13));
         totalH = h0;
@@ -945,7 +966,7 @@
         // 바람에 사진도 글씨도 작아지고, 일부 기기에선 캔버스가 너무 커져 아예 안 그려졌음.)
         var cols = imgs.length <= 2 ? imgs.length : 2;
         var rows = Math.ceil(imgs.length / cols);
-        var CELL = Math.max(160, Math.round(440 * scale));
+        var CELL = Math.max(140, Math.round(360 * scale));
         W = cols * CELL + GAP * (cols - 1);
         var gridH = rows * CELL + GAP * (rows - 1);
         barH = Math.max(70, Math.round(W * 0.11));
@@ -982,7 +1003,7 @@
         canvas.toBlob(function(blob){
           if (!blob) { resolve(null); return; }
           resolve(new File([blob], 'delivery.jpg', { type: 'image/jpeg' }));
-        }, 'image/jpeg', 0.82);
+        }, 'image/jpeg', 0.78);
       });
     });
   }
@@ -994,6 +1015,7 @@
     }
     pendingPhotoShareLabel = label;
     pendingPhotoShareItems = [];
+    photoShareFailStreak = 0;
     pendingPhotoShareRetry = 0;
     document.getElementById('photoShareInput').click();
   }
@@ -1026,6 +1048,7 @@
     document.getElementById('photoShareBar').style.display = 'flex';
     document.getElementById('photoShareSendBtn').textContent = '카톡으로 보내기';
     document.getElementById('photoShareSendBtn').disabled = false;
+    warmComposeCache(); // 사진이 추가/삭제될 때마다 미리 합성해둬서, 버튼 누르는 순간엔 기다릴 게 거의 없게 함
   }
   document.getElementById('photoShareInput').addEventListener('change', function(e){
     var file = e.target.files && e.target.files[0];
@@ -1038,29 +1061,69 @@
     document.getElementById('photoShareInput').click();
   });
   document.getElementById('photoShareCancelBtn').addEventListener('click', closePhotoShareBar);
+  // 실패한 화면에서 "사진 앱에서 직접 보내주세요"라고만 하면, 사실 합성한(글씨 새긴) 사진은
+  // 메모리에만 있을 뿐 폰에 저장된 파일이 아니라서 정작 사진 앱에는 없다. 그래서 연달아
+  // 실패하면 이 합성 사진을 실제로 폰에 저장(다운로드)해줘서, 최소한 그 파일을 갤러리/다운로드
+  // 폴더에서 찾아 카톡에 직접 첨부할 수 있게 함(진짜 마지막 안전장치).
+  var photoShareFailStreak = 0;
+  function saveComposedFileToDevice(file, label){
+    try {
+      var url = URL.createObjectURL(file);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = '배송사진_' + (label || '') + '_' + Date.now() + '.jpg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ try { URL.revokeObjectURL(url); } catch(e){} }, 30000);
+      return true;
+    } catch(e){ return false; }
+  }
+
   document.getElementById('photoShareSendBtn').addEventListener('click', function(){
     if (!pendingPhotoShareItems.length) return;
     var sendBtn = this;
     sendBtn.disabled = true;
     sendBtn.textContent = '사진 준비 중...';
-    var files = pendingPhotoShareItems.map(function(it){ return it.file; });
-    var label = pendingPhotoShareLabel;
 
     function doShare(finalFile){
       var data = { files: [finalFile] };
       if (!(navigator.canShare && navigator.canShare(data))){
-        toast('이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
+        var saved0 = saveComposedFileToDevice(finalFile, pendingPhotoShareLabel);
+        toast(saved0 ? '이 폰에서는 자동 공유가 안 돼서, 사진을 폰에 저장했어요. 다운로드함(갤러리)에서 찾아 카톡으로 직접 보내주세요.'
+                     : '이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
         closePhotoShareBar();
         return;
       }
       navigator.share(data).then(function(){
+        toast('카톡 전송 완료 ✅');
+        photoShareFailStreak = 0;
         closePhotoShareBar();
       }).catch(function(err){
         sendBtn.disabled = false;
         sendBtn.textContent = '카톡으로 보내기';
         if (err && err.name === 'AbortError') return; // 사용자가 공유창을 취소한 경우(사진들은 계속 준비된 채로 둠)
-        toast('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진 앱에서 직접 카톡으로 보내주세요.');
-        closePhotoShareBar();
+        photoShareFailStreak++;
+        if (err && err.name === 'NotAllowedError' && photoShareFailStreak < 2){
+          // 사진 합성(글씨 새기기)이 오래 걸려서 "방금 누른 동작" 인정이 끊긴 경우.
+          // 사진은 이미 준비돼 있으니, 버튼을 한 번 더 눌러서 그 클릭에 곧바로 이어서
+          // 공유를 시도하면 대부분 해결된다.
+          toast('공유창이 막혔어요. 사진은 준비됐으니, 버튼을 한 번 더 눌러주세요.');
+          return;
+        }
+        // 어떤 오류든 사진을 지우지 않고 그대로 남겨둔다. 물건 쌓아두고 사진 찍은 다음이라
+        // 다시 박싱해서 재촬영하는 게 제일 번거로우니, 에러가 나도 "사진은 안 없어졌으니
+        // 다시 눌러보거나 직접 보내면 된다"는 게 항상 보장되게 함.
+        // 같은 문제로 두 번째 실패하면(같은 방식으로 또 시도해봐야 또 막힐 가능성이 높으니),
+        // 아예 사진을 폰에 저장해서 실제로 사진 앱에서 보낼 수 있게 함.
+        if (photoShareFailStreak >= 2){
+          var saved = saveComposedFileToDevice(finalFile, pendingPhotoShareLabel);
+          toast(saved
+            ? '계속 안 보내져서 사진을 폰에 저장했어요. 다운로드함(갤러리)에서 찾아 카톡으로 직접 보내주세요. (원본은 그대로 있어요)'
+            : ('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진은 안 지워졌으니 다시 눌러보시거나, 사진 앱에서 직접 카톡으로 보내주세요.'));
+        } else {
+          toast('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진은 안 지워졌으니 다시 눌러보세요.');
+        }
       });
     }
 
@@ -1072,12 +1135,26 @@
       sendBtn.disabled = false;
       sendBtn.textContent = '카톡으로 보내기 (다시 시도, 더 작게)';
       pendingPhotoShareRetry++;
+      photoComposeCache = null;
+      warmComposeCache(); // 다음 클릭 때 또 기다리지 않도록, 실패한 즉시 더 작은 크기로 미리 다시 준비해둠
       toast('상호명 새기기에 실패했어요. 다시 누르면 더 작은 크기로 재시도해요(사진은 안 지워졌어요).');
     }
-    composeAndStampPhotos(files, label, pendingPhotoShareRetry).then(function(finalFile){
+
+    // 버튼을 누른 시점에 이미 백그라운드로 합성해둔 결과가 있으면 그걸 그대로 쓴다.
+    // (합성 자체를 지금부터 새로 시작하면 그 처리 시간 때문에 방금 누른 동작이라는 인정이
+    // 끊겨서 navigator.share()가 막히는 경우가 있어서, 최대한 미리 준비해두는 게 핵심.)
+    var key = composeCacheKey();
+    var promise;
+    if (photoComposeCache && photoComposeCache.key === key){
+      promise = photoComposeCache.promise;
+    } else {
+      var files = pendingPhotoShareItems.map(function(it){ return it.file; });
+      promise = composeAndStampPhotos(files, pendingPhotoShareLabel, pendingPhotoShareRetry).catch(function(){ return null; });
+    }
+    promise.then(function(finalFile){
       if (!finalFile){ onFail(); return; }
       doShare(finalFile);
-    }).catch(onFail);
+    });
   });
 
   // "도착 완료" 체크할 때마다, 다음 배송지로(또는 마지막이었으면 복귀/도착지로) 바로
