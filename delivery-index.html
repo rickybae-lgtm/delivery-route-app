@@ -1,0 +1,1875 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>경성 티에프</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#043280">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.3/kakao.min.js" crossorigin="anonymous"></script>
+<script>
+  // 카카오내비(Kakao.Navi) 호출에 필요한 인증. JavaScript 키는 카카오 디벨로퍼스 앱의
+  // "앱 키 > JavaScript 키"에서 확인, 이 도메인이 "플랫폼 > Web"에 등록돼 있어야 동작함.
+  try { Kakao.init('3af73fcb54f5e7ba98b90f5e46c9396b'); } catch (e) {}
+</script>
+<style>
+  :root{
+    --bg:#F5F2EA; --surface:#FFFFFF; --surface-2:#ECE6D6; --ink:#1B211D; --ink-soft:#63695F;
+    --accent:#E2591C; --accent-ink:#FFFFFF; --cold:#1C6E8C; --frozen:#4B3F91; --porch:#8A6D3B; --line:#DCD3BE;
+    --danger:#B23A2E; --warn:#B2790E; --shadow: 0 1px 2px rgba(27,33,29,.06), 0 4px 14px rgba(27,33,29,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14181A; --surface:#1C2224; --surface-2:#232B2D; --ink:#EDEFE9; --ink-soft:#9AA39C;
+      --accent:#FF7A3D; --accent-ink:#1B211D; --cold:#55B7D6; --frozen:#9186E0; --porch:#D3AA6E; --line:#2E3638;
+      --danger:#F0796B; --warn:#E8B84B; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14181A; --surface:#1C2224; --surface-2:#232B2D; --ink:#EDEFE9; --ink-soft:#9AA39C;
+    --accent:#FF7A3D; --accent-ink:#1B211D; --cold:#55B7D6; --frozen:#9186E0; --porch:#D3AA6E; --line:#2E3638;
+    --danger:#F0796B; --warn:#E8B84B; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.3);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"IBM Plex Sans KR", "Apple SD Gothic Neo", sans-serif;
+    padding:0 16px; padding-block:20px 56px;
+  }
+  .wrap{ max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:22px; }
+  h1,h2,h3{ font-family:"Black Han Sans","IBM Plex Sans KR",sans-serif; font-weight:400; text-wrap:balance; margin:0; letter-spacing:.01em; }
+  .app-header{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .app-header h1{ font-size:30px; color:var(--ink); }
+  .app-header .date{ font-family:"IBM Plex Mono",monospace; font-size:13px; color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+  .lede{ color:var(--ink-soft); font-size:14px; line-height:1.6; margin-top:-8px; }
+
+  section.card{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:18px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px;
+  }
+  section.card > h2{ font-size:22px; display:flex; align-items:center; gap:8px; }
+
+  .tabbar{
+    position:sticky; top:0; z-index:20; display:grid; grid-template-columns:repeat(4,1fr); gap:6px;
+    background:var(--bg); padding:8px 2px; margin:0 -16px; padding-inline:16px; border-bottom:1px solid var(--line);
+  }
+  .tab-btn{
+    background:var(--surface); color:var(--ink-soft); border:1px solid var(--line);
+    border-radius:10px; padding:8px 3px; font-size:11.5px; font-weight:600; white-space:normal;
+    text-align:center; overflow:hidden; text-overflow:ellipsis; line-height:1.3; word-break:keep-all;
+  }
+  @media (max-width:420px){
+    .tab-btn{ font-size:10.5px; padding:7px 2px; }
+  }
+  .tab-btn.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .tab-btn .tab-dot{
+    display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent);
+    margin-left:5px; vertical-align:middle;
+  }
+  .hint{ font-size:12.5px; color:var(--ink-soft); line-height:1.55; }
+
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:13px; color:var(--ink-soft); }
+  label.field span.lbl{ font-weight:600; color:var(--ink); font-size:13px; }
+  input, select, textarea{
+    font:inherit; font-size:14.5px; color:var(--ink); background:var(--surface-2);
+    border:1px solid var(--line); border-radius:9px; padding:9px 11px; width:100%;
+  }
+  input:focus, select:focus, textarea:focus, button:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  textarea{ resize:vertical; min-height:52px; font-family:inherit; }
+
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:460px){ .row2{ grid-template-columns:1fr; } }
+
+  button{ font:inherit; cursor:pointer; border-radius:9px; border:1px solid transparent; padding:10px 14px; font-weight:600; font-size:14px; }
+  .btn-primary{ background:var(--accent); color:var(--accent-ink); }
+  .btn-primary:disabled{ opacity:.45; cursor:not-allowed; }
+  .btn-ghost{ background:transparent; color:var(--ink); border-color:var(--line); }
+  .btn-ghost.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .icon-actions{ display:flex; gap:10px; margin:4px 0 8px; }
+  .icon-btn{
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    width:76px; padding:10px 4px; border-radius:14px; background:var(--surface-2);
+    border:1px solid var(--line); color:var(--ink); text-decoration:none; font-size:11.5px;
+    font-weight:600; cursor:pointer;
+  }
+  .icon-btn .icon-btn-ico{ font-size:22px; line-height:1; }
+  .icon-btn:active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .icon-btn.active{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn-ghost:hover{ background:var(--surface-2); }
+  .btn-danger{ background:transparent; color:var(--danger); border-color:var(--line); }
+  .btn-sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+
+  .stop-picker{ display:flex; flex-direction:column; gap:6px; max-height:300px; overflow-y:auto; padding-right:2px; }
+  .pick-row{ display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px; border:1px solid var(--line); background:var(--surface-2); font-size:14px; }
+  .pick-row.is-start{ border-color:var(--accent); }
+  .pick-row input[type="checkbox"], .pick-row input[type="radio"]{ width:17px; height:17px; flex:none; accent-color:var(--accent); }
+  .pick-row .name{ font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .badge{ font-size:11px; font-weight:600; padding:2px 7px; border-radius:20px; flex:none; letter-spacing:.02em; }
+  .badge.cold{ background:color-mix(in srgb, var(--cold) 18%, transparent); color:var(--cold); }
+  .badge.frozen{ background:color-mix(in srgb, var(--frozen) 18%, transparent); color:var(--frozen); }
+  .badge.ambient{ background:color-mix(in srgb, var(--ink-soft) 16%, transparent); color:var(--ink-soft); }
+  .badge.porch{ background:color-mix(in srgb, var(--porch) 20%, transparent); color:var(--porch); }
+  .badge.mix{ background:linear-gradient(90deg, color-mix(in srgb, var(--cold) 28%, transparent), color-mix(in srgb, var(--frozen) 28%, transparent)); color:var(--frozen); }
+  .badge.start{ background:color-mix(in srgb, var(--accent) 18%, transparent); color:var(--accent); }
+  .badge.warn{ background:color-mix(in srgb, var(--warn) 20%, transparent); color:var(--warn); }
+  .move-btns{ display:flex; flex-direction:column; gap:3px; flex:none; }
+  .move-btns button{ width:26px; height:24px; padding:0; font-size:12px; line-height:1; border-radius:6px; }
+
+  .empty{ font-size:13.5px; color:var(--ink-soft); padding:10px 2px; }
+
+  .route-list{ display:flex; flex-direction:column; gap:10px; }
+  .stop-card{ display:flex; gap:12px; padding:12px; border:1px solid var(--line); border-radius:11px; background:var(--surface-2); }
+  .stop-card.done{ opacity:.45; }
+  .stop-card.done .stop-name{ text-decoration:line-through; }
+  .stop-card.next{ border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .done-check{ display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:var(--ink-soft); flex:none; }
+  .done-check input{ width:18px; height:18px; accent-color:var(--accent); }
+  .order-num{ font-family:"Black Han Sans",sans-serif; font-size:24px; color:var(--accent); flex:none; width:30px; text-align:center; line-height:1.3; }
+  input.order-num-input{ -moz-appearance:textfield; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; width:38px; height:32px; padding:0; }
+  input.order-num-input::-webkit-outer-spin-button, input.order-num-input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  .drag-handle{ flex:none; width:28px; height:36px; border:none; background:none; color:var(--muted); font-size:18px; cursor:grab; touch-action:none; padding:0; }
+  .stop-card.dragging{ opacity:0.4; }
+  .stop-card.drag-over{ box-shadow:0 0 0 2px var(--accent) inset; }
+  .stop-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }
+  .stop-top{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .stop-name{ font-weight:700; font-size:15.5px; }
+  .stop-addr{ font-size:13px; color:var(--ink-soft); }
+  .stop-notes{ font-size:12.5px; color:var(--ink-soft); display:flex; flex-direction:column; gap:2px; }
+  .stop-notes b{ color:var(--ink); font-weight:600; }
+  .leg-dist{ font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-soft); font-variant-numeric:tabular-nums; }
+  .stop-actions{ display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; }
+  a.tmap-link, .stop-actions a{ text-decoration:none; display:inline-flex; align-items:center; gap:5px; font-size:12.5px; font-weight:600; color:var(--accent); border:1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); padding:5px 10px; border-radius:7px; }
+
+  .leg-groups{ display:flex; flex-direction:column; gap:8px; }
+  .leg-group{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; background:var(--surface-2); border:1px solid var(--line); border-radius:9px; font-size:13.5px; }
+
+  .searchbar{ display:flex; gap:8px; }
+  .searchbar input{ flex:1; }
+  .loc-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; }
+  .loc-card{ border:1px solid var(--line); background:var(--surface-2); border-radius:11px; padding:12px; display:flex; flex-direction:column; gap:6px; }
+  .loc-card .top{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+  .loc-card .name{ font-weight:700; font-size:15px; }
+  .loc-card .addr{ font-size:12.5px; color:var(--ink-soft); }
+  .kv{ font-size:12.5px; display:flex; gap:6px; }
+  .kv b{ color:var(--ink-soft); font-weight:600; min-width:44px; flex:none; }
+  .kv code{ font-family:"IBM Plex Mono",monospace; background:var(--surface); border:1px solid var(--line); padding:1px 6px; border-radius:5px; }
+  .memo{ font-size:12.5px; color:var(--ink); background:var(--surface); border-radius:7px; padding:6px 8px; border:1px solid var(--line); }
+  .card-actions{ display:flex; gap:6px; margin-top:2px; flex-wrap:wrap; }
+
+  .banner{ font-size:12.5px; padding:9px 12px; border-radius:9px; background:var(--surface-2); border:1px solid var(--line); color:var(--ink-soft); }
+  .toast{ position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--ink); color:var(--bg); padding:9px 16px; border-radius:20px; font-size:13px; font-weight:600; box-shadow:var(--shadow); z-index:50; opacity:0; pointer-events:none; transition:opacity .2s ease; max-width:90vw; text-align:center; }
+  #lockScreen{ position:fixed; inset:0; z-index:200; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:24px; }
+  #lockScreen .lockBox{ width:100%; max-width:320px; display:flex; flex-direction:column; gap:14px; text-align:center; }
+  #lockScreen h2{ margin:0; font-size:20px; }
+  #lockScreen input{ width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--line); font-size:16px; text-align:center; background:var(--surface); color:var(--ink); }
+  #lockScreen button{ width:100%; padding:12px; border-radius:10px; border:none; background:var(--accent); color:var(--accent-ink); font-size:15px; font-weight:700; }
+  #lockScreen .lockErr{ color:#d0342c; font-size:13px; min-height:16px; }
+  .toast.show{ opacity:1; }
+  .spinner{ display:inline-block; width:13px; height:13px; border:2px solid color-mix(in srgb, var(--accent) 40%, transparent); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .divider{ height:1px; background:var(--line); border:0; margin:2px 0; }
+  @media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } }
+  #mapModal{ position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.5); display:none; align-items:stretch; justify-content:center; }
+  #mapPanel{ background:var(--surface); width:100%; max-width:720px; margin:auto; display:flex; flex-direction:column; height:min(90vh,760px); border-radius:12px; overflow:hidden; box-shadow:var(--shadow); }
+  #mapPanelHead{ display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--line); }
+  #mapEl{ flex:1 1 auto; width:100%; }
+  .map-pin-num{ background:var(--accent); color:#fff; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35); }
+  .map-pin-start{ font-size:22px; line-height:1; }
+</style>
+</head>
+<body>
+
+<div id="lockScreen">
+  <div class="lockBox">
+    <h2>🔒 경성 티에프</h2>
+    <div style="font-size:13.5px; color:var(--ink-soft);">직원용 비밀번호를 입력해주세요.</div>
+    <input type="password" id="lockPwInput" inputmode="numeric" autocomplete="off" placeholder="비밀번호">
+    <button type="button" id="lockPwBtn">확인</button>
+    <div class="lockErr" id="lockPwErr"></div>
+  </div>
+</div>
+
+<div class="wrap" id="appWrap" style="display:none;">
+  <header class="app-header">
+    <h1>경성 티에프</h1>
+    <span class="date" id="todayDate"></span>
+  </header>
+
+  <div class="field" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+    <span class="lbl">길찾기 앱</span>
+    <div style="display:flex; gap:14px; flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
+        <input type="radio" name="navPref" id="navPrefTmap" value="tmap" style="width:16px;height:16px;accent-color:var(--accent);">
+        티맵
+      </label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:13.5px; opacity:.55;">
+        <input type="radio" name="navPref" id="navPrefKakao" value="kakao" disabled style="width:16px;height:16px;accent-color:var(--accent);">
+        카카오내비 (준비중)
+      </label>
+    </div>
+  </div>
+
+  <div class="tabbar" id="tabbar">
+    <button type="button" class="tab-btn" data-tab="pickerCard">🚚 매장선택</button>
+    <button type="button" class="tab-btn" data-tab="routeCard" id="tabBtnRoute">📋 배송순서</button>
+    <button type="button" class="tab-btn" data-tab="formCard">➕ 업체 등록</button>
+    <button type="button" class="tab-btn" data-tab="listCard">📒 업체 목록</button>
+  </div>
+
+  <section class="card" id="pickerCard">
+    <h2>금일 배송매장 선택</h2>
+    <div class="hint" id="pickerStartEnd"></div>
+    <div class="hint" id="pickerHint"></div>
+    <input type="text" id="pickerSearch" placeholder="🔍 상호명 검색" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--line); font-size:14.5px; background:var(--surface); color:var(--ink); margin-bottom:2px;">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <div id="pickerCount" style="font-weight:700; font-size:14px; color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); border-radius:8px; padding:7px 10px; display:inline-block;"></div>
+      <button type="button" class="btn-ghost btn-sm" id="pickerShowSelectedBtn">✅ 선택한 곳만 보기</button>
+    </div>
+    <div class="stop-picker" id="stopPicker"></div>
+    <label class="field" style="max-width:180px;"><span class="lbl">오늘 출발 시각</span><input type="time" id="departTime" value="03:00"></label>
+    <div class="field" style="margin-top:10px;">
+      <span class="lbl">계산 방식</span>
+      <div style="display:flex; gap:14px; flex-wrap:wrap; margin-top:4px;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
+          <input type="radio" name="calcMode" id="calcModeAuto" value="auto" checked style="width:16px;height:16px;accent-color:var(--accent);">
+          오픈시간 고려
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
+          <input type="radio" name="calcMode" id="calcModeDistanceOnly" value="distanceOnly" style="width:16px;height:16px;accent-color:var(--accent);">
+          최단거리만
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13.5px;">
+          <input type="radio" name="calcMode" id="calcModeManual" value="manual" style="width:16px;height:16px;accent-color:var(--accent);">
+          수동 배정
+        </label>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" id="calcBtn">오늘 순서 계산하기</button>
+      <button class="btn-ghost btn-sm" id="clearPickBtn" type="button">선택 초기화</button>
+    </div>
+  </section>
+
+  <section class="card" id="routeCard">
+    <h2>금일 배송순서</h2>
+    <div class="empty" id="routeEmptyMsg">아직 계산된 경로가 없어요.</div>
+    <div id="routeContent" style="display:none; flex-direction:column; gap:14px;">
+      <div class="hint" id="routeSummary"></div>
+      <div class="btn-row">
+        <button class="btn-ghost btn-sm" id="resetDoneBtn" type="button">완료 표시 초기화</button>
+        <button class="btn-ghost btn-sm" id="reoptBtn" type="button">🔄 전체 다시 최적화</button>
+        <button class="btn-ghost btn-sm" id="showMapBtn" type="button">🗺️ 지도로 보기</button>
+      </div>
+      <div class="hint" id="routeMoveHint"></div>
+      <div class="route-list" id="routeList"></div>
+      <hr class="divider">
+      <div class="hint" id="legGroupsHint"></div>
+      <div class="leg-groups" id="legGroups"></div>
+      <div class="btn-row">
+        <button class="btn-ghost btn-sm" id="copyRouteBtn" type="button">순서 텍스트로 복사</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="formCard">
+    <h2>업체등록 / 수정</h2>
+    <form id="locForm">
+      <input type="hidden" id="editId">
+      <div class="row2">
+        <label class="field"><span class="lbl">상호명 *</span><input type="text" id="f_name" placeholder="예: 상록회관, 미소식당" required></label>
+        <label class="field"><span class="lbl">보관 구분</span>
+          <select id="f_category">
+            <option value="none">해당없음</option>
+            <option value="kitchen">주방상온</option>
+            <option value="porch">현관상온</option>
+            <option value="cold">냉장주의</option>
+            <option value="frozen">냉동주의</option>
+            <option value="mix">냉장 및 냉동주의</option>
+            <option value="custom">기타 (직접 입력)</option>
+          </select>
+        </label>
+      </div>
+      <div class="row2" id="customCatWrap" style="display:none; margin-top:10px;">
+        <label class="field" style="grid-column:1/-1;"><span class="lbl">보관 구분 (직접 입력)</span><input type="text" id="f_categoryCustom" placeholder="예: 상온·습기주의, 위험물 등"></label>
+      </div>
+      <label class="field" style="margin-top:10px;"><span class="lbl">주소 *</span><input type="text" id="f_address" placeholder="지번 또는 도로명 주소" required></label>
+      <div class="btn-row" style="margin-top:8px;">
+        <button type="button" class="btn-ghost btn-sm" id="curLocBtn">📍 현재 위치 사용 (GPS)</button>
+      </div>
+      <details style="margin-top:8px;">
+        <summary style="cursor:pointer; font-size:12.5px; color:var(--ink-soft);">좌표 직접 입력</summary>
+        <div class="row2" style="margin-top:8px;">
+          <label class="field"><span class="lbl">위도 (lat)</span><input type="text" inputmode="decimal" id="f_lat" placeholder="자동으로 채워집니다"></label>
+          <label class="field"><span class="lbl">경도 (lng)</span><input type="text" inputmode="decimal" id="f_lng" placeholder="자동으로 채워집니다"></label>
+        </div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button type="button" class="btn-ghost btn-sm" id="regeoBtn">📍 이 주소로 좌표 다시 찾기</button>
+        </div>
+      </details>
+      <div class="row2" style="margin-top:10px;">
+        <label class="field"><span class="lbl">열쇠 위치</span><input type="text" id="f_key" placeholder="예: 후문 화분 밑, 경비실 맡김"></label>
+        <label class="field"><span class="lbl">출입 비밀번호</span><input type="text" id="f_pw" placeholder="예: 1234#"></label>
+      </div>
+      <div class="row2" style="margin-top:10px;">
+        <label class="field"><span class="lbl">오픈(개점) 시각 — 선택</span><input type="time" id="f_open"></label>
+      </div>
+      <label class="field" style="margin-top:10px;"><span class="lbl">기타 메모</span><textarea id="f_memo" placeholder="예: 오전 9시 이전 배송 금지, 계단 3층, 개 조심"></textarea></label>
+      <label class="field" style="margin-top:10px; flex-direction:row; align-items:center; gap:8px;">
+        <input type="checkbox" id="f_isStart" style="width:17px;height:17px;accent-color:var(--accent);">
+        <span class="lbl" style="margin:0;">이 장소를 출발지 후보로 사용 (예: 창고, 물류센터)</span>
+      </label>
+      <div class="btn-row" style="margin-top:14px;">
+        <button type="submit" class="btn-primary" id="saveLocBtn">업체 저장</button>
+        <button type="button" class="btn-ghost" id="cancelEditBtn" style="display:none;">수정 취소</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card" id="listCard">
+    <h2>업체 목록 <span style="font-size:13px; font-weight:600; color:var(--ink-soft);" id="locCount"></span></h2>
+    <div class="searchbar"><input type="text" id="searchInput" placeholder="상호명 앞글자로 검색"></div>
+    <div class="btn-row" style="margin-top:10px;">
+      <button type="button" class="btn-ghost btn-sm" id="exportBtn">📤 데이터 내보내기 (파일로 저장)</button>
+      <button type="button" class="btn-ghost btn-sm" id="importBtn">📥 다른 기기 데이터 불러오기</button>
+      <input type="file" id="importFile" accept=".json,application/json,text/plain,text/json,*/*" style="display:none;">
+    </div>
+    <div class="loc-grid" id="locGrid"></div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="photoShareInput" accept="image/*" capture="environment" style="display:none;">
+<div id="photoShareBar" style="display:none; flex-direction:column; gap:10px; position:fixed; left:0; right:0; bottom:0; z-index:60; background:var(--surface); border-top:1px solid var(--line); box-shadow:var(--shadow); padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+    <span id="photoShareName" style="font-size:13.5px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+    <span id="photoShareCount" class="hint" style="flex:none;"></span>
+  </div>
+  <div id="photoShareThumbs" style="display:flex; gap:8px; overflow-x:auto;"></div>
+  <div class="btn-row">
+    <button class="btn-ghost btn-sm" id="photoShareAddBtn" type="button">📷 +더 찍기</button>
+    <button class="btn-ghost btn-sm" id="photoShareCancelBtn" type="button" style="margin-left:auto;">취소</button>
+    <button class="btn-primary btn-sm" id="photoShareSendBtn" type="button">카톡으로 보내기</button>
+  </div>
+</div>
+
+<div id="mapModal">
+  <div id="mapPanel">
+    <div id="mapPanelHead">
+      <strong>오늘의 배송 경로 지도</strong>
+      <button type="button" class="btn-ghost btn-sm" id="closeMapBtn">닫기 ✕</button>
+    </div>
+    <div id="mapEl"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = 'deliveryRoute.locations.v1';
+  var NAV_PREF_KEY = 'deliveryRoute.navPref.v1';
+  var START_END_KEY = 'deliveryRoute.startEnd.v1';
+
+  var todayEl = document.getElementById('todayDate');
+  todayEl.textContent = new Intl.DateTimeFormat('ko-KR', { month:'long', day:'numeric', weekday:'short' }).format(new Date());
+
+  // ---------- 길찾기 앱 설정(티맵 / 카카오내비) ----------
+  // 카카오내비 SDK는 "비즈 앱" 전환(사업자등록 등) 승인이 나야 정상 동작함 — 아직 준비중이라
+  // 이 플래그를 false로 막아두고, true로 바뀌면 라디오 버튼의 disabled도 같이 풀어주면 됨.
+  var KAKAO_NAVI_READY = false;
+  function getNavPref(){
+    if (!KAKAO_NAVI_READY) return 'tmap';
+    try { return localStorage.getItem(NAV_PREF_KEY) === 'kakao' ? 'kakao' : 'tmap'; }
+    catch (e) { return 'tmap'; }
+  }
+  function setNavPref(v){
+    try { localStorage.setItem(NAV_PREF_KEY, v === 'kakao' ? 'kakao' : 'tmap'); } catch (e) {}
+  }
+  function navAppLabel(){ return getNavPref() === 'kakao' ? '카카오내비' : '티맵'; }
+
+  var CAT_LABEL = { none:'해당없음', kitchen:'주방상온', porch:'현관상온', cold:'냉장주의', frozen:'냉동주의', mix:'냉장·냉동주의', custom:'기타' };
+  var CAT_CLASS = { none:'ambient', kitchen:'ambient', porch:'porch', cold:'cold', frozen:'frozen', mix:'mix', custom:'porch' };
+  function catLabel(loc){
+    if (loc.category === 'custom') return loc.categoryCustom ? loc.categoryCustom : '기타';
+    return CAT_LABEL[loc.category] || loc.category || '해당없음';
+  }
+  function catClass(loc){ return CAT_CLASS[loc.category] || 'ambient'; }
+  var DWELL_MIN = 15;
+
+  var state = { locations: [], selected:{}, startId:null, endId:null, order:null };
+
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function(){ t.classList.remove('show'); }, 2600);
+  }
+
+  function loadLocations(){
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+  function saveLocations(){
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.locations)); }
+    catch (e) { toast('저장 공간이 가득 찼거나 저장에 실패했어요.'); }
+  }
+
+  // 계산된 오늘의 방문 순서(state.order)는 기기에 저장해뒀다가, 티맵 켰다 돌아오거나
+  // 탭을 오래 안 보고 있다가 브라우저가 페이지를 새로고침해도(=state가 통째로 사라져도)
+  // 오늘 날짜가 같으면 그대로 복원합니다. 날짜가 바뀌면(자정 넘어가면) 무시하고 새로 계산하게 함.
+  var ORDER_KEY = 'deliveryRoute.order.v1';
+  function todayStr(){ return new Date().toDateString(); }
+  function saveOrder(){
+    try {
+      if (state.order) localStorage.setItem(ORDER_KEY, JSON.stringify({ date: todayStr(), order: state.order }));
+      else localStorage.removeItem(ORDER_KEY);
+    } catch (e) {}
+  }
+  function loadOrder(){
+    try {
+      var raw = localStorage.getItem(ORDER_KEY);
+      if (!raw) return null;
+      var v = JSON.parse(raw);
+      if (!v || v.date !== todayStr() || !v.order) return null;
+      return v.order;
+    } catch (e) { return null; }
+  }
+
+  // 출발지/도착지는 매일 바뀌는 게 아니라 한 번 정하면 계속 쓰는 값이라, 3번 "업체 목록"에서
+  // 지정하면 기기에 저장해두고 다음에 앱을 열어도 그대로 유지합니다.
+  function loadStartEnd(){
+    try {
+      var raw = localStorage.getItem(START_END_KEY);
+      var v = raw ? JSON.parse(raw) : {};
+      state.startId = v.startId || null;
+      state.endId = v.endId || null;
+    } catch (e) { state.startId = null; state.endId = null; }
+  }
+  function saveStartEnd(){
+    try { localStorage.setItem(START_END_KEY, JSON.stringify({ startId: state.startId, endId: state.endId })); }
+    catch (e) {}
+  }
+  function setStart(id){
+    state.startId = (state.startId === id) ? null : id;
+    if (state.startId) delete state.selected[state.startId];
+    saveStartEnd(); renderAll();
+  }
+  function setEnd(id){
+    state.endId = (state.endId === id) ? null : id;
+    if (state.endId) delete state.selected[state.endId];
+    saveStartEnd(); renderAll();
+  }
+
+  function hasCoords(loc){ return typeof loc.lat === 'number' && typeof loc.lng === 'number' && !isNaN(loc.lat) && !isNaN(loc.lng); }
+  function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function locById(id){ return state.locations.find(function(l){ return l.id === id; }); }
+  function fmtKm(m){ var km = m/1000; return km < 1 ? Math.round(m) + 'm' : km.toFixed(1) + 'km'; }
+  function fmtMin(s){ return Math.round(s/60) + '분'; }
+  function parseHHMM(s){ if (!s) return null; var m = /^(\d{1,2}):(\d{2})/.exec(s); return m ? parseInt(m[1],10)*60+parseInt(m[2],10) : null; }
+  // 분 단위를 반올림한 뒤(예: 4:59.6 -> 5:00) 시/분을 나누므로, "4시60분" 같은 표기가 나올 수 없음.
+  function fmtHHMM(mins){ mins = Math.round(mins); mins = ((mins % 1440) + 1440) % 1440; var h = Math.floor(mins/60), m = mins%60; return (h<10?'0':'')+h+':'+(m<10?'0':'')+m; }
+
+  function tmapSearchLink(q){ return 'tmap://search?name=' + encodeURIComponent(q); }
+  function googleMapsSearchLink(q){ return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q); }
+  function singleTmapLink(from, dest){
+    return 'tmap://route?startname=' + encodeURIComponent(from ? (from.name||'출발지') : '현재위치') +
+      (from ? '&startx=' + from.lng + '&starty=' + from.lat : '') +
+      '&goalname=' + encodeURIComponent(dest.name) + '&goalx=' + dest.lng + '&goaly=' + dest.lat;
+  }
+  function tmapMultiLink(legStops){
+    var from = legStops[0], dests = legStops.slice(1);
+    if (!dests.length) return null;
+    var goal = dests[dests.length-1], vias = dests.slice(0, dests.length-1);
+    var params = [
+      'startname=' + encodeURIComponent(from.name || '출발지'), 'startx=' + from.lng, 'starty=' + from.lat,
+      'goalname=' + encodeURIComponent(goal.name), 'goalx=' + goal.lng, 'goaly=' + goal.lat
+    ];
+    vias.forEach(function(v, idx){
+      var n = idx+1;
+      params.push('via'+n+'name=' + encodeURIComponent(v.name));
+      params.push('via'+n+'x=' + v.lng);
+      params.push('via'+n+'y=' + v.lat);
+    });
+    return 'tmap://route?' + params.join('&');
+  }
+
+  // 카카오내비: kakaonavi:// 링크를 그냥 열면 "인증 실패"가 나서, 카카오 JavaScript SDK(Kakao.Navi)로
+  // 호출해야 함(Kakao.init()에 등록해둔 JS 키로 인증됨). 경유지는 최대 3곳까지 지원(목적지 포함 4곳).
+  function kakaoNaviReady(){
+    if (window.Kakao && Kakao.Navi && Kakao.isInitialized && Kakao.isInitialized()) return true;
+    toast('카카오내비 연동이 아직 준비되지 않았어요. 새로고침 후 다시 시도해주세요.');
+    return false;
+  }
+  function kakaoNaviStartSingle(from, dest){
+    if (!kakaoNaviReady()) return;
+    var opts = { name: dest.name, x: dest.lng, y: dest.lat, coordType: 'wgs84' };
+    if (from && typeof from.lng === 'number' && typeof from.lat === 'number') { opts.sX = from.lng; opts.sY = from.lat; }
+    Kakao.Navi.start(opts);
+  }
+  function kakaoNaviStartGroup(legStops){
+    if (!kakaoNaviReady()) return;
+    var from = legStops[0], dests = legStops.slice(1);
+    if (!dests.length) return;
+    var goal = dests[dests.length-1], vias = dests.slice(0, dests.length-1);
+    var opts = { name: goal.name, x: goal.lng, y: goal.lat, coordType: 'wgs84' };
+    if (from && typeof from.lng === 'number' && typeof from.lat === 'number') { opts.sX = from.lng; opts.sY = from.lat; }
+    if (vias.length) opts.viaPoints = vias.map(function(v){ return { name: v.name, x: v.lng, y: v.lat }; });
+    Kakao.Navi.start(opts);
+  }
+  function kakaoNaviSearchLink(q){ return 'kakaomap://search?q=' + encodeURIComponent(q); }
+
+  // 지금 설정된 길찾기 앱(티맵/카카오내비) 기준으로 목적지 하나로 이동. 카카오내비는 SDK 호출이라
+  // <a href>가 아니라 클릭 시 이 함수를 직접 불러서 실행해야 함.
+  function openNavSingle(from, dest){
+    if (getNavPref() === 'kakao') kakaoNaviStartSingle(from, dest);
+    else window.location.href = singleTmapLink(from, dest);
+  }
+  function navSearchLink(q){
+    return getNavPref() === 'kakao' ? kakaoNaviSearchLink(q) : tmapSearchLink(q);
+  }
+
+  // ---------- geocoding ----------
+  function geocode(query){
+    return fetch('/api/geocode?q=' + encodeURIComponent(query)).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); });
+  }
+
+  // ---------- routing (real road distance) ----------
+  function fetchRealRoute(start, stops, fixedOrder, end){
+    var body = {
+      start: { lat:start.lat, lng:start.lng },
+      stops: stops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }),
+      fixedOrder: !!fixedOrder, returnToStart: true
+    };
+    if (end) body.end = { lat:end.lat, lng:end.lng };
+    return fetch('/api/route', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); });
+  }
+
+  // 선택한 배달처 중 오픈시간이 있는 곳이 있으면, 그 시간에 맞춰 도착하도록(필요하면 대기)
+  // 전체 소요시간이 최소가 되는 순서를 계산. (단순 거리최적화가 아니라 오픈시간까지 감안)
+  // end가 있으면(도착지가 출발지와 다르면) 오픈시간과 무관하게 항상 그 지점이 마지막이 됨.
+  function fetchTimeWindowRoute(start, stops, departMin, end){
+    var body = {
+      mode: 'timeWindow',
+      start: { lat:start.lat, lng:start.lng },
+      stops: stops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id, openMin: parseHHMM(s.openTime) }; }),
+      departMin: departMin, dwellMin: DWELL_MIN, returnToStart: true
+    };
+    if (end) body.end = { lat:end.lat, lng:end.lng };
+    return fetch('/api/route', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); });
+  }
+
+  // 사용자가 순서를 수동으로 바꾼 뒤, 그 순서 그대로 실제 거리/시간을 다시 계산.
+  // (좌표 없는 곳은 그 자리 그대로 유지하고, 좌표 있는 곳들만 재계산 대상에 포함)
+  function recalcLegsForCurrentOrder(){
+    if (!state.order) return;
+    var start = state.order.start;
+    var seq = state.order.seq;
+    var withCoords = seq.filter(hasCoords);
+    if (!withCoords.length){ renderRoute(); return; }
+    fetchRealRoute(start, withCoords, true, state.order.end).then(function(res){
+      if (res.ok && res.data && res.data.legs){
+        // withCoords 순서 그대로 legs가 오므로, seq 안에서 좌표있는 위치에만 순서대로 채워넣는다.
+        var li = 0;
+        var mergedLegs = seq.map(function(loc){
+          if (!hasCoords(loc)) return null;
+          return res.data.legs[li++] || null;
+        });
+        state.order.legs = mergedLegs;
+        state.order.totalDistanceM = res.data.totalDistanceM;
+        state.order.totalDurationS = res.data.totalDurationS;
+      }
+      renderRoute();
+    }).catch(function(){ renderRoute(); });
+  }
+
+  // 사용자가 지금까지 손으로 옮긴 배달처들(state.order.pinnedIds)은 전부 그 위치에 고정하고,
+  // 그 사이/앞뒤에 남은 배달처들만 그 상황(출발지→pin1→pin2→...→복귀)에 맞춰
+  // 실제 도로거리 기준으로 다시 최적화합니다. (B, C를 둘 다 옮겼으면 둘 다 고정된 채 나머지가 유동)
+  function reoptimizeAroundAllPinned(){
+    if (!state.order) return;
+    var start = state.order.start;
+    var seq = state.order.seq;
+    var pinnedIds = state.order.pinnedIds || [];
+    var pinnedSet = {};
+    pinnedIds.forEach(function(id){ pinnedSet[id] = true; });
+
+    var noCoordAll = seq.filter(function(l){ return !hasCoords(l); });
+    var coordSeq = seq.filter(hasCoords);
+    var pinnedStops = coordSeq.filter(function(l){ return pinnedSet[l.id]; });
+
+    if (!pinnedStops.length){ recalcLegsForCurrentOrder(); return; }
+
+    var segments = [];
+    var cur = [];
+    coordSeq.forEach(function(loc){
+      if (pinnedSet[loc.id]){ segments.push(cur); cur = []; }
+      else { cur.push(loc); }
+    });
+    segments.push(cur);
+
+    toast('고정된 ' + pinnedStops.length + '곳을 유지하고 나머지 순서를 다시 최적화하는 중...');
+
+    var reoptBody = {
+      mode: 'pinnedMulti',
+      start: { lat:start.lat, lng:start.lng },
+      pinned: pinnedStops.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }),
+      segments: segments.map(function(seg){ return seg.map(function(s){ return { lat:s.lat, lng:s.lng, _ref:s.id }; }); }),
+      returnToStart: true
+    };
+    if (state.order.end) reoptBody.end = { lat:state.order.end.lat, lng:state.order.end.lng };
+    fetch('/api/route', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reoptBody)
+    }).then(function(r){ return r.json().then(function(d){ return { ok:r.ok, data:d }; }); })
+      .then(function(res){
+        if (!res.ok || !res.data || !res.data.segmentsOrder){
+          toast('재최적화에 실패했어요. 순서는 유지하고 거리만 계산할게요.');
+          recalcLegsForCurrentOrder();
+          return;
+        }
+        var seqOut = [];
+        res.data.segmentsOrder.forEach(function(segOrder, i){
+          segOrder.forEach(function(s){ seqOut.push(locById(s._ref) || s); });
+          if (i < pinnedStops.length) seqOut.push(pinnedStops[i]);
+        });
+        state.order.seq = seqOut.concat(noCoordAll);
+        state.order.legs = res.data.legs;
+        state.order.totalDistanceM = res.data.totalDistanceM;
+        state.order.totalDurationS = res.data.totalDurationS;
+        renderRoute();
+      }).catch(function(){ toast('재최적화 중 오류가 발생했어요.'); recalcLegsForCurrentOrder(); });
+  }
+
+  // ---------- rendering ----------
+  function updatePickerCount(){
+    var countEl = document.getElementById('pickerCount');
+    if (!countEl) return;
+    var selectedLocs = Object.keys(state.selected).map(locById).filter(Boolean);
+    var n = selectedLocs.length;
+    if (!n){ countEl.textContent = '선택된 배달처: 0곳'; return; }
+    var addrMap = {};
+    selectedLocs.forEach(function(l){
+      var a = (l.address||'').trim();
+      if (!a) return;
+      addrMap[a] = (addrMap[a]||0) + 1;
+    });
+    var dupAddrs = Object.keys(addrMap).filter(function(a){ return addrMap[a] > 1; });
+    var text = '✅ 선택된 배달처: ' + n + '곳';
+    if (dupAddrs.length){
+      var dupNames = selectedLocs.filter(function(l){ return dupAddrs.indexOf((l.address||'').trim()) !== -1; }).map(function(l){ return l.name; });
+      text += ' · ⚠ 같은 주소 배달처 ' + dupNames.length + '곳 포함 (' + dupNames.join(', ') + ') — 같은 건물이면 문제 없어요.';
+    }
+    countEl.textContent = text;
+  }
+
+  // "선택한 곳만 보기" 토글 상태(기기에 저장 안 하고 화면 켜져있는 동안만 기억함).
+  var pickerShowSelectedOnly = false;
+
+  // 체크박스 목록 부분만 그려줌(검색어/선택한 곳만 보기 여부에 따라 걸러진 목록).
+  // renderPicker()와 검색창 입력 이벤트 둘 다에서 재사용.
+  function renderPickerRows(pickable){
+    var wrap = document.getElementById('stopPicker');
+    var searchEl = document.getElementById('pickerSearch');
+    var qRaw = (searchEl && searchEl.value || '').trim();
+    // 완성된 글자로 시작하는 상호명만 걸러줌(예: "미" -> "미"로 시작하는 곳만,
+    // "미나" -> "미나"로 시작하는 곳만). 자음만 쳤을 때 엉뚱한 곳이 걸리는 걸 막기 위해
+    // 자모 분리 대신 완성된 글자 그대로 앞부분 일치만 봄.
+    var q = qRaw.toLowerCase();
+    var visible = q ? pickable.filter(function(loc){ return (loc.name || '').trim().toLowerCase().indexOf(q) === 0; }) : pickable;
+    // "선택한 곳만 보기"가 켜져있으면 체크된 곳만 추림(업체목록과 같은 순서 그대로 유지됨,
+    // pickable 자체가 state.locations 순서를 따르기 때문).
+    if (pickerShowSelectedOnly) visible = visible.filter(function(loc){ return !!state.selected[loc.id]; });
+    var selBtn = document.getElementById('pickerShowSelectedBtn');
+    if (selBtn) selBtn.classList.toggle('active', pickerShowSelectedOnly);
+    wrap.innerHTML = '';
+    if (!pickable.length){ wrap.innerHTML = '<div class="empty">출발지/도착지로 지정된 곳 외에 배달처가 없습니다.</div>'; return; }
+    if (pickerShowSelectedOnly && !visible.length){ wrap.innerHTML = '<div class="empty">아직 선택한 곳이 없어요.</div>'; return; }
+    if (!visible.length){ wrap.innerHTML = '<div class="empty">"' + escapeHtml(qRaw) + '"와 일치하는 업체가 없어요.</div>'; return; }
+    visible.forEach(function(loc){
+      var row = document.createElement('label');
+      row.className = 'pick-row';
+      row.innerHTML =
+        '<input type="checkbox" data-sel-id="' + loc.id + '" ' + (state.selected[loc.id]?'checked':'') + '>' +
+        '<span class="name">' + escapeHtml(loc.name) + '</span>' +
+        '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span>' +
+        (!hasCoords(loc) ? '<span class="badge warn">좌표없음</span>' : '');
+      wrap.appendChild(row);
+    });
+    wrap.querySelectorAll('input[data-sel-id]').forEach(function(c){ c.addEventListener('change', function(){
+      if (this.checked) state.selected[this.dataset.selId]=true; else delete state.selected[this.dataset.selId];
+      updatePickerCount();
+      // "선택한 곳만 보기" 중엔 체크 해제하면 바로 목록에서 사라지게 다시 그려줌.
+      if (pickerShowSelectedOnly) renderPickerRows(pickable);
+    }); });
+  }
+  function renderPicker(){
+    var wrap = document.getElementById('stopPicker');
+    var hint = document.getElementById('pickerHint');
+    var startEndEl = document.getElementById('pickerStartEnd');
+    var startLoc = state.startId ? locById(state.startId) : null;
+    var endLoc = state.endId ? locById(state.endId) : null;
+    if (startEndEl){
+      startEndEl.innerHTML =
+        '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">' +
+          '<span>출발지: <b>' + (startLoc ? escapeHtml(startLoc.name) : '미설정') + '</b> · 도착지: <b>' +
+            (endLoc ? escapeHtml(endLoc.name) : (startLoc ? escapeHtml(startLoc.name) + ' (출발지와 동일)' : '미설정')) +
+          '</b></span>' +
+          '<a href="#" id="gotoListTabLink" style="display:inline-flex; align-items:center; gap:3px; ' +
+            'padding:3px 8px; border-radius:8px; background:var(--surface-2); border:1px solid var(--line); ' +
+            'color:var(--ink); text-decoration:none; font-size:12px; font-weight:700; white-space:nowrap;">' +
+            '✏️ 변경</a>' +
+        '</div>';
+      var gotoLink = document.getElementById('gotoListTabLink');
+      if (gotoLink) gotoLink.addEventListener('click', function(e){ e.preventDefault(); switchTab('listCard'); });
+    }
+    hint.textContent = state.locations.length ? '' : '업체를 먼저 등록해주세요.';
+    updatePickerCount();
+    if (!state.locations.length){ wrap.innerHTML = '<div class="empty">등록된 배달처가 없습니다.</div>'; return; }
+    var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
+    renderPickerRows(pickable);
+  }
+  (function initPickerSearch(){
+    var searchEl = document.getElementById('pickerSearch');
+    if (!searchEl) return;
+    searchEl.addEventListener('input', function(){
+      // 체크박스 목록만 다시 그림(검색창 자체는 다시 안 그려서 커서/포커스 유지됨).
+      var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
+      renderPickerRows(pickable);
+    });
+  })();
+  (function initPickerShowSelected(){
+    var btn = document.getElementById('pickerShowSelectedBtn');
+    if (!btn) return;
+    btn.addEventListener('click', function(){
+      pickerShowSelectedOnly = !pickerShowSelectedOnly;
+      // "선택한 곳만 보기"를 켤 때, 검색창에 남아있는 글자 때문에 선택한 곳이
+      // 걸러져서 하나도 안 보이는 일이 없도록 검색어를 지워줌.
+      var searchEl = document.getElementById('pickerSearch');
+      if (pickerShowSelectedOnly && searchEl) searchEl.value = '';
+      var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
+      renderPickerRows(pickable);
+    });
+  })();
+
+  function pinStop(loc){
+    if (!state.order.pinnedIds) state.order.pinnedIds = [];
+    if (state.order.pinnedIds.indexOf(loc.id) === -1) state.order.pinnedIds.push(loc.id);
+  }
+  function moveStop(idx, delta){
+    var seq = state.order.seq, j = idx+delta;
+    if (j<0 || j>=seq.length) return;
+    var moving = seq[idx];
+    var tmp = seq[idx]; seq[idx]=seq[j]; seq[j]=tmp;
+    // 수동 배정 모드에서는 옮긴 곳만 그 자리로 움직이고, 나머지는 절대 자동으로 재배치하지 않음.
+    // 화면(길찾기 링크 포함)은 서버에서 새 거리를 받아오기 전에 일단 새 순서로 바로 다시 그려서,
+    // 통신하는 짧은 순간에 길찾기 버튼을 눌러도 옛날 순서가 걸리는 일이 없게 함.
+    if (state.order.manualMode){ renderRoute(); recalcLegsForCurrentOrder(); return; }
+    if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { renderRoute(); recalcLegsForCurrentOrder(); }
+  }
+  function moveStopToEnd(idx){
+    var seq = state.order.seq;
+    var moving = seq[idx];
+    seq.push(seq.splice(idx,1)[0]);
+    if (state.order.manualMode){ renderRoute(); recalcLegsForCurrentOrder(); return; }
+    if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { renderRoute(); recalcLegsForCurrentOrder(); }
+  }
+  // idx번째(0-base) 지점을 목표 순번(targetPos1, 1-base 사용자 입력값)으로 바로 옮김.
+  // 화살표를 여러 번 누르지 않고, 순번을 직접 타이핑해서 한 번에 이동시키기 위한 함수.
+  function moveStopTo(idx, targetPos1){
+    var seq = state.order.seq;
+    var targetIdx = targetPos1 - 1;
+    if (isNaN(targetIdx)) { renderRoute(); return; }
+    if (targetIdx < 0) targetIdx = 0;
+    if (targetIdx > seq.length - 1) targetIdx = seq.length - 1;
+    if (targetIdx === idx) { renderRoute(); return; }
+    var moving = seq.splice(idx, 1)[0];
+    seq.splice(targetIdx, 0, moving);
+    if (state.order.manualMode){ renderRoute(); recalcLegsForCurrentOrder(); return; }
+    if (hasCoords(moving)){ pinStop(moving); reoptimizeAroundAllPinned(); } else { renderRoute(); recalcLegsForCurrentOrder(); }
+  }
+
+  function estimateSchedule(departMin, seq, legs){
+    var cur = departMin, out = [];
+    seq.forEach(function(loc, i){
+      var leg = legs && legs[i];
+      var arrivalMin = null, waitMin = 0;
+      if (leg){
+        cur += leg.durationS/60;
+        arrivalMin = cur;
+        var openMin = parseHHMM(loc.openTime);
+        if (openMin!=null && arrivalMin < openMin-0.5){
+          waitMin = openMin - arrivalMin;
+          cur = openMin;
+        }
+        cur += DWELL_MIN;
+      }
+      var early = waitMin > 0.5;
+      out.push({ loc:loc, arrivalMin:arrivalMin, waitMin:waitMin, early:early, leg:leg });
+    });
+    return out;
+  }
+
+  // ---------- 탭 전환 ----------
+  var TAB_IDS = ['pickerCard', 'routeCard', 'formCard', 'listCard'];
+  function switchTab(id){
+    TAB_IDS.forEach(function(cid){
+      var el = document.getElementById(cid);
+      if (el) el.style.display = (cid === id) ? 'flex' : 'none';
+    });
+    document.querySelectorAll('.tab-btn').forEach(function(btn){
+      btn.classList.toggle('active', btn.dataset.tab === id);
+    });
+    try { sessionStorage.setItem('deliveryRoute.activeTab', id); } catch (e) {}
+  }
+  document.querySelectorAll('.tab-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){ switchTab(this.dataset.tab); });
+  });
+
+  // 방문 순서가 있는지(계산됨) 여부를 탭 버튼에 점(●)으로 표시해줌.
+  function updateRouteTabBadge(){
+    var btn = document.getElementById('tabBtnRoute');
+    if (!btn) return;
+    var hasDot = btn.querySelector('.tab-dot');
+    if (state.order && !hasDot) btn.insertAdjacentHTML('beforeend', '<span class="tab-dot"></span>');
+    else if (!state.order && hasDot) hasDot.remove();
+  }
+
+  // ---------- 사진 찍어서 카톡 보내기 ----------
+  // 카메라로 찍은 사진 하단에 상호명 글씨를 직접 새겨넣은 뒤(캔버스로 합성) 그 사진을
+  // 공유함 — 카톡이 텍스트를 따로 안 붙여줘도, 사진 자체에 글씨가 박혀 있어서
+  // 붙여넣기 없이도 상호명이 항상 같이 보임.
+  //
+  // 주의: 카메라 앱을 열었다 돌아오면 브라우저가 "방금 사용자가 직접 누른 동작"이라는
+  // 인식을 잃어버려서(NotAllowedError), 그 시점에 곧바로 navigator.share()를 부르면 막히는
+  // 기기가 있음. 그래서 사진을 찍은 뒤 "카톡으로 보내기" 버튼을 한 번 더 보여주고,
+  // 그 버튼을 누르는 순간(=진짜 방금 누른 동작)에 공유를 실행하도록 함.
+  // 물량이 많아서 사진을 2~3장 찍어야 할 때를 위해, 한 장 찍고 바로 안 보내고
+  // "+더 찍기"로 계속 담았다가 한 번에 카톡으로 같이 보낼 수 있게 함(Web Share API는
+  // 사진 여러 장을 한 번에 공유하는 것도 지원함 — 카톡에서 사진 묶음으로 한번에 전송됨).
+  var pendingPhotoShareLabel = '';
+  var pendingPhotoShareItems = []; // [{file, url}, ...] — 원본(글씨 새기기 전) 사진들
+  var pendingPhotoShareRetry = 0; // 실패할 때마다 늘려서 다음 시도 땐 더 작은 크기로 처리함
+
+  // "카톡으로 보내기"를 누른 그 순간부터 사진 합성(글씨 새기기)을 시작하면, 합성이 끝나기까지
+  // 걸리는 시간(사진 처리 중 비동기 작업) 때문에 일부 폰/브라우저에서 "방금 사용자가 누른
+  // 동작"이라는 인식이 끊겨서 navigator.share()가 곧바로 NotAllowedError로 막히는 경우가 있다.
+  // 그래서 사진을 찍거나 뺄 때마다 미리(버튼을 누르기 전부터) 백그라운드에서 합성해두고,
+  // 버튼을 누른 순간에는 "이미 다 준비된 결과"를 거의 바로 써서 share() 호출이 클릭 시점과
+  // 최대한 가깝게 이어지도록 한다.
+  var photoComposeCache = null; // { key, promise }
+  function composeCacheKey(){
+    return pendingPhotoShareItems.map(function(it){ return it.file.name + '_' + it.file.size; }).join(',') +
+      '|' + pendingPhotoShareLabel + '|' + pendingPhotoShareRetry;
+  }
+  function warmComposeCache(){
+    if (!pendingPhotoShareItems.length){ photoComposeCache = null; return; }
+    var key = composeCacheKey();
+    if (photoComposeCache && photoComposeCache.key === key) return; // 이미 준비 중이거나 완료됨
+    var files = pendingPhotoShareItems.map(function(it){ return it.file; });
+    var label = pendingPhotoShareLabel;
+    var retry = pendingPhotoShareRetry;
+    photoComposeCache = { key: key, promise: composeAndStampPhotos(files, label, retry).catch(function(){ return null; }) };
+  }
+
+  // 사진 파일을 화면에 그릴 수 있는 소스(ImageBitmap 또는 Image)로 변환.
+  // (EXIF 방향 정보 때문에 사진이 옆으로 눕는 걸 막기 위해, 가능하면
+  // createImageBitmap({imageOrientation:'from-image'})로 방향을 먼저 바로잡음)
+  // maxDim을 넘으면 디코딩 단계에서부터 줄여서 읽어옴(원본 12MP짜리를 그대로 여러 장
+  // 메모리에 올리면 느려지거나 멈추는 폰이 있어서, 애초에 필요한 크기로만 디코딩함).
+  function loadImageSource(file, maxDim){
+    return new Promise(function(resolve){
+      if (window.createImageBitmap){
+        var opts = { imageOrientation: 'from-image' };
+        if (maxDim){ opts.resizeWidth = maxDim; opts.resizeQuality = 'medium'; }
+        createImageBitmap(file, opts)
+          .then(function(bmp){ resolve({ src: bmp, w: bmp.width, h: bmp.height, bitmap: true }); })
+          .catch(function(){
+            var img = new Image();
+            img.onload = function(){ resolve({ src: img, w: img.naturalWidth, h: img.naturalHeight }); URL.revokeObjectURL(img.src); };
+            img.onerror = function(){ resolve(null); };
+            img.src = URL.createObjectURL(file);
+          });
+      } else {
+        var img = new Image();
+        img.onload = function(){ resolve({ src: img, w: img.naturalWidth, h: img.naturalHeight }); URL.revokeObjectURL(img.src); };
+        img.onerror = function(){ resolve(null); };
+        img.src = URL.createObjectURL(file);
+      }
+    });
+  }
+
+  // 사진이 1장이면 그 사진 밑에, 여러 장이면 세로로 이어 붙인 한 장짜리 사진 밑에
+  // 반투명 바 + 흰 글씨로 label을 새겨서 "항상 사진 1장"으로 만들어줌.
+  // 사진 여러 장을 한 번에 공유하면(navigator.share({files:[a,b]})) 안드로이드 일부
+  // 기기가 우리가 편집한 사진 대신 원본을 찾아서 보내버리는 문제가 있었는데(확인됨: 1장은
+  // 정상, 2장 이상이면 글씨가 사라짐), 애초에 파일을 1개로 합쳐버리면 그 문제 자체가 없어지고
+  // 버튼도 한 번만 누르면 됨.
+  // 사진들을 한 장씩 순서대로(동시에 X) 필요한 크기로만 디코딩해서 읽어옴.
+  // 예전엔 12MP 원본 사진 여러 장을 동시에 원본 그대로 디코딩하면서 느려지거나
+  // 멈추는(그리고 결국 실패하는) 문제가 있었는데, 애초에 필요한 작은 크기로,
+  // 그것도 한 장씩 순서대로 디코딩하면 메모리 부담이 훨씬 줄어듦.
+  function loadImagesSequential(files, maxDim){
+    var out = [];
+    return files.reduce(function(p, f){
+      return p.then(function(){
+        return loadImageSource(f, maxDim).then(function(im){ out.push(im); });
+      });
+    }, Promise.resolve()).then(function(){ return out; });
+  }
+
+  function composeAndStampPhotos(files, label, shrink){
+    // 사진 용량이 크면(요즘 폰 카메라는 한 장에 10~20MB씩도 나옴) 처리 중 오류가 날 수 있어서,
+    // 카톡으로 보내기엔 충분하면서 훨씬 가벼운 크기로 줄여서 처리함.
+    // shrink(0,1,2...)는 실패해서 재시도할 때마다 한 단계씩 더 작게 줄이기 위한 값.
+    var scale = Math.pow(0.7, shrink || 0);
+    var baseDim = files.length === 1 ? 700 : 480; // 해상도를 더 낮춰서 처리 속도를 높이고 실패 확률을 더 줄임
+    var maxDim = Math.max(240, Math.round(baseDim * scale));
+    return loadImagesSequential(files, maxDim).then(function(imgs){
+      imgs = imgs.filter(Boolean);
+      if (!imgs.length) return null;
+      var GAP = 8;
+      var canvas, ctx, W, totalH, barH;
+      if (imgs.length === 1){
+        // 사진이 1장이면 자르지 않고 원본 비율 그대로, 폭만 안전한 크기로 제한.
+        // 글씨 바(帶)는 사진 위에 겹쳐 그리지 않고, 사진 아래에 캔버스를 그만큼 더 늘려서
+        // 따로 붙인다 — 겹쳐 그리면 그 부분만큼 사진이 검게 가려져서 "사진 밑이 잘린" 것처럼
+        // 보이는 문제가 있었음.
+        var im0 = imgs[0];
+        W = Math.min(im0.w, 700);
+        var h0 = Math.round(im0.h * (W / im0.w));
+        barH = Math.max(64, Math.round(W * 0.13));
+        totalH = h0 + barH;
+        canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = totalH;
+        ctx = canvas.getContext('2d');
+        ctx.drawImage(im0.src, 0, 0, W, h0);
+        if (im0.bitmap && im0.src.close) im0.src.close();
+      } else {
+        // 사진이 2장 이상이면, 사진 개수에 따라 캔버스가 한없이 커지지 않도록
+        // 정사각형 칸(격자)에 맞춰 가운데를 크롭해서 배치함. 칸 크기가 고정이라
+        // 사진이 몇 장이든(3장, 4장...) 캔버스 크기가 예측 가능한 범위 안에 있고,
+        // 예전처럼 세로로 쭉 이어붙이던 방식보다 사진과 글씨가 카톡 화면에서 더 크게 보임.
+        // (예전 방식은 사진이 늘어날수록 세로로 길쭉해져서, 카톡이 통째로 축소해 보여주는
+        // 바람에 사진도 글씨도 작아지고, 일부 기기에선 캔버스가 너무 커져 아예 안 그려졌음.)
+        var cols = imgs.length <= 2 ? imgs.length : 2;
+        var rows = Math.ceil(imgs.length / cols);
+        var CELL = Math.max(140, Math.round(360 * scale));
+        W = cols * CELL + GAP * (cols - 1);
+        var gridH = rows * CELL + GAP * (rows - 1);
+        barH = Math.max(70, Math.round(W * 0.11));
+        totalH = gridH + barH;
+        canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = totalH;
+        ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, W, totalH);
+        imgs.forEach(function(im, i){
+          var col = i % cols, row = Math.floor(i / cols);
+          var cx = col * (CELL + GAP), cy = row * (CELL + GAP);
+          // 예전엔 칸을 꽉 채우려고 사진을 정사각형에 맞춰 잘라냈는데(가운데만 남기고 위아래/양옆
+          // 잘림), 그러다 보니 사진 끄트머리가 잘려 보이는 문제가 있었음. 그래서 사진을 자르지
+          // 않고 칸 안에 통째로 들어가게(꽉 안 차도 전체가 다 보이게) 바꿈 — Math.min으로 계산.
+          var scale = Math.min(CELL / im.w, CELL / im.h);
+          var dw = im.w * scale, dh = im.h * scale;
+          var dx = cx + (CELL - dw) / 2, dy = cy + (CELL - dh) / 2;
+          ctx.drawImage(im.src, dx, dy, dw, dh);
+          if (im.bitmap && im.src.close) im.src.close();
+        });
+      }
+      // 이제 사진 위에 겹치는 게 아니라 사진 아래 별도 공간이라, 반투명일 필요 없이 꽉 채워도 됨.
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, totalH - barH, W, barH);
+      var fontSize = Math.max(30, Math.round(barH * 0.46));
+      ctx.font = 'bold ' + fontSize + 'px "Apple SD Gothic Neo","Malgun Gothic",sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.fillText(label, Math.round(barH * 0.3), totalH - barH / 2, W - barH * 0.6);
+      return new Promise(function(resolve){
+        canvas.toBlob(function(blob){
+          if (!blob) { resolve(null); return; }
+          resolve(new File([blob], 'delivery.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.78);
+      });
+    });
+  }
+
+  function startPhotoShare(label){
+    if (!(navigator.canShare && navigator.share)){
+      toast('이 브라우저에서는 사진 공유 기능이 지원되지 않아요. 카메라로 찍어서 카톡으로 직접 보내주세요.');
+      return;
+    }
+    pendingPhotoShareLabel = label;
+    pendingPhotoShareItems = [];
+    photoShareFailStreak = 0;
+    pendingPhotoShareRetry = 0;
+    document.getElementById('photoShareInput').click();
+  }
+  function closePhotoShareBar(){
+    document.getElementById('photoShareBar').style.display = 'none';
+    pendingPhotoShareItems.forEach(function(it){ URL.revokeObjectURL(it.url); });
+    pendingPhotoShareItems = [];
+    pendingPhotoShareRetry = 0;
+  }
+  function renderPhotoShareBar(){
+    var thumbs = document.getElementById('photoShareThumbs'); thumbs.innerHTML = '';
+    pendingPhotoShareItems.forEach(function(it, i){
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'position:relative; flex:none;';
+      wrap.innerHTML = '<img src="' + it.url + '" style="width:64px;height:64px;object-fit:cover;border-radius:8px;display:block;" alt="">' +
+        '<button type="button" data-rmphoto="' + i + '" style="position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; border:1px solid var(--line); background:var(--surface); font-size:11px; line-height:1; padding:0;">✕</button>';
+      thumbs.appendChild(wrap);
+    });
+    thumbs.querySelectorAll('[data-rmphoto]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var i = parseInt(this.dataset.rmphoto, 10);
+        URL.revokeObjectURL(pendingPhotoShareItems[i].url);
+        pendingPhotoShareItems.splice(i, 1);
+        if (!pendingPhotoShareItems.length){ closePhotoShareBar(); return; }
+        renderPhotoShareBar();
+      });
+    });
+    document.getElementById('photoShareCount').textContent = pendingPhotoShareItems.length + '장';
+    document.getElementById('photoShareName').textContent = pendingPhotoShareLabel;
+    document.getElementById('photoShareBar').style.display = 'flex';
+    document.getElementById('photoShareSendBtn').textContent = '카톡으로 보내기';
+    document.getElementById('photoShareSendBtn').disabled = false;
+    warmComposeCache(); // 사진이 추가/삭제될 때마다 미리 합성해둬서, 버튼 누르는 순간엔 기다릴 게 거의 없게 함
+  }
+  document.getElementById('photoShareInput').addEventListener('change', function(e){
+    var file = e.target.files && e.target.files[0];
+    this.value = '';
+    if (!file) return;
+    pendingPhotoShareItems.push({ file: file, url: URL.createObjectURL(file) });
+    renderPhotoShareBar();
+  });
+  document.getElementById('photoShareAddBtn').addEventListener('click', function(){
+    document.getElementById('photoShareInput').click();
+  });
+  document.getElementById('photoShareCancelBtn').addEventListener('click', closePhotoShareBar);
+  // 실패한 화면에서 "사진 앱에서 직접 보내주세요"라고만 하면, 사실 합성한(글씨 새긴) 사진은
+  // 메모리에만 있을 뿐 폰에 저장된 파일이 아니라서 정작 사진 앱에는 없다. 그래서 연달아
+  // 실패하면 이 합성 사진을 실제로 폰에 저장(다운로드)해줘서, 최소한 그 파일을 갤러리/다운로드
+  // 폴더에서 찾아 카톡에 직접 첨부할 수 있게 함(진짜 마지막 안전장치).
+  var photoShareFailStreak = 0;
+  function saveComposedFileToDevice(file, label){
+    try {
+      var url = URL.createObjectURL(file);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = '배송사진_' + (label || '') + '_' + Date.now() + '.jpg';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ try { URL.revokeObjectURL(url); } catch(e){} }, 30000);
+      return true;
+    } catch(e){ return false; }
+  }
+
+  document.getElementById('photoShareSendBtn').addEventListener('click', function(){
+    if (!pendingPhotoShareItems.length) return;
+    var sendBtn = this;
+    sendBtn.disabled = true;
+    sendBtn.textContent = '사진 준비 중...';
+
+    function doShare(finalFile){
+      var data = { files: [finalFile] };
+      if (!(navigator.canShare && navigator.canShare(data))){
+        var saved0 = saveComposedFileToDevice(finalFile, pendingPhotoShareLabel);
+        toast(saved0 ? '이 폰에서는 자동 공유가 안 돼서, 사진을 폰에 저장했어요. 다운로드함(갤러리)에서 찾아 카톡으로 직접 보내주세요.'
+                     : '이 사진은 자동 공유가 안 돼요. 사진 앱에서 직접 카톡으로 보내주세요.');
+        closePhotoShareBar();
+        return;
+      }
+      navigator.share(data).then(function(){
+        toast('카톡 전송 완료 ✅');
+        photoShareFailStreak = 0;
+        closePhotoShareBar();
+      }).catch(function(err){
+        sendBtn.disabled = false;
+        sendBtn.textContent = '카톡으로 보내기';
+        if (err && err.name === 'AbortError') return; // 사용자가 공유창을 취소한 경우(사진들은 계속 준비된 채로 둠)
+        photoShareFailStreak++;
+        if (err && err.name === 'NotAllowedError' && photoShareFailStreak < 2){
+          // 사진 합성(글씨 새기기)이 오래 걸려서 "방금 누른 동작" 인정이 끊긴 경우.
+          // 사진은 이미 준비돼 있으니, 버튼을 한 번 더 눌러서 그 클릭에 곧바로 이어서
+          // 공유를 시도하면 대부분 해결된다.
+          toast('공유창이 막혔어요. 사진은 준비됐으니, 버튼을 한 번 더 눌러주세요.');
+          return;
+        }
+        // 어떤 오류든 사진을 지우지 않고 그대로 남겨둔다. 물건 쌓아두고 사진 찍은 다음이라
+        // 다시 박싱해서 재촬영하는 게 제일 번거로우니, 에러가 나도 "사진은 안 없어졌으니
+        // 다시 눌러보거나 직접 보내면 된다"는 게 항상 보장되게 함.
+        // 같은 문제로 두 번째 실패하면(같은 방식으로 또 시도해봐야 또 막힐 가능성이 높으니),
+        // 아예 사진을 폰에 저장해서 실제로 사진 앱에서 보낼 수 있게 함.
+        if (photoShareFailStreak >= 2){
+          var saved = saveComposedFileToDevice(finalFile, pendingPhotoShareLabel);
+          toast(saved
+            ? '계속 안 보내져서 사진을 폰에 저장했어요. 다운로드함(갤러리)에서 찾아 카톡으로 직접 보내주세요. (원본은 그대로 있어요)'
+            : ('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진은 안 지워졌으니 다시 눌러보시거나, 사진 앱에서 직접 카톡으로 보내주세요.'));
+        } else {
+          toast('공유 중 오류가 발생했어요 (' + (err && (err.name||err.message) || '') + '). 사진은 안 지워졌으니 다시 눌러보세요.');
+        }
+      });
+    }
+
+    // 상호명이 안 새겨진 사진은 절대 보내면 안 되므로, 글씨 새기기가 실패하면
+    // 그냥 보내지 말고 멈춘 뒤 다시 시도하게 함(원본만 보내는 일은 없음).
+    // 사진은 지워지지 않고 그대로 남아있어서 다시 찍을 필요 없이 버튼만 다시 누르면 되고,
+    // 실패할 때마다 다음 시도는 자동으로 더 작은 크기로 처리해서 성공 확률을 높임.
+    function onFail(){
+      sendBtn.disabled = false;
+      sendBtn.textContent = '카톡으로 보내기 (다시 시도, 더 작게)';
+      pendingPhotoShareRetry++;
+      photoComposeCache = null;
+      warmComposeCache(); // 다음 클릭 때 또 기다리지 않도록, 실패한 즉시 더 작은 크기로 미리 다시 준비해둠
+      toast('상호명 새기기에 실패했어요. 다시 누르면 더 작은 크기로 재시도해요(사진은 안 지워졌어요).');
+    }
+
+    // 버튼을 누른 시점에 이미 백그라운드로 합성해둔 결과가 있으면 그걸 그대로 쓴다.
+    // (합성 자체를 지금부터 새로 시작하면 그 처리 시간 때문에 방금 누른 동작이라는 인정이
+    // 끊겨서 navigator.share()가 막히는 경우가 있어서, 최대한 미리 준비해두는 게 핵심.)
+    var key = composeCacheKey();
+    var promise;
+    if (photoComposeCache && photoComposeCache.key === key){
+      promise = photoComposeCache.promise;
+    } else {
+      var files = pendingPhotoShareItems.map(function(it){ return it.file; });
+      promise = composeAndStampPhotos(files, pendingPhotoShareLabel, pendingPhotoShareRetry).catch(function(){ return null; });
+    }
+    promise.then(function(finalFile){
+      if (!finalFile){ onFail(); return; }
+      doShare(finalFile);
+    });
+  });
+
+  // "도착 완료" 체크할 때마다, 다음 배송지로(또는 마지막이었으면 복귀/도착지로) 바로
+  // 안내할지 물어봄. 확인 누르면 그 자리에서 바로 내비가 켜짐.
+  function promptNextAfterDone(){
+    if (!state.order) return;
+    var completed2 = state.order.completed || {};
+    var seq2 = state.order.seq;
+    var nextIdx = seq2.findIndex(function(l){ return !completed2[l.id]; });
+    if (nextIdx !== -1){
+      var nextLoc = seq2[nextIdx];
+      if (confirm('다음 배송지(' + nextLoc.name + ')로 안내할까요?')){
+        var prevLoc = nextIdx === 0 ? state.order.start : seq2[nextIdx - 1];
+        if (hasCoords(nextLoc)) openNavSingle(prevLoc, nextLoc);
+        else window.location.href = navSearchLink(nextLoc.address || nextLoc.name);
+      }
+    } else {
+      var endLoc = state.order.end || state.order.start;
+      if (confirm('오늘도 수고하셨습니다. ' + endLoc.name + '으로 복귀할까요?')){
+        var lastLoc = seq2.length ? seq2[seq2.length - 1] : state.order.start;
+        if (hasCoords(endLoc)) openNavSingle(lastLoc, endLoc);
+        else window.location.href = navSearchLink(endLoc.address || endLoc.name);
+      }
+    }
+  }
+
+  function renderRoute(){
+    var emptyMsg = document.getElementById('routeEmptyMsg');
+    var content = document.getElementById('routeContent');
+    updateRouteTabBadge();
+    saveOrder();
+    if (!state.order){ emptyMsg.style.display='block'; content.style.display='none'; return; }
+    emptyMsg.style.display='none';
+    content.style.display='flex';
+    document.getElementById('routeMoveHint').textContent = state.order.manualMode
+      ? '수동 배정 모드: 옮긴 곳만 고정, 나머지는 그대로예요.'
+      : '옮긴 곳은 고정되고, 나머지는 자동으로 재배치돼요.';
+    var start = state.order.start, seq = state.order.seq, legs = state.order.legs;
+    var departMin = parseHHMM(document.getElementById('departTime').value) || 180;
+    var schedule = estimateSchedule(departMin, seq, legs);
+    var list = document.getElementById('routeList'); list.innerHTML='';
+    var lateCount = 0, totalDist = state.order.totalDistanceM || 0, totalDur = state.order.totalDurationS || 0;
+    var prev = start;
+
+    if (!state.order.completed) state.order.completed = {};
+    var completed = state.order.completed;
+    var nextIdx = schedule.findIndex(function(entry){ return !completed[entry.loc.id]; });
+
+    schedule.forEach(function(entry, i){
+      var loc = entry.loc;
+      if (entry.early) lateCount++;
+      var isDone = !!completed[loc.id];
+      var isNext = (i === nextIdx);
+      var distLine = entry.leg
+        ? ('이전 지점에서 실제 주행 ' + fmtKm(entry.leg.distanceM) + ' (' + fmtMin(entry.leg.durationS) + ') · 예상 도착 ' + fmtHHMM(entry.arrivalMin))
+        : '경로 정보 없음';
+      var actionLink = hasCoords(loc)
+        ? '<a class="icon-btn" href="#" data-navstop="' + i + '"><span class="icon-btn-ico">🧭</span><span>길찾기</span></a>'
+        : '<a class="icon-btn" href="' + navSearchLink(loc.address||loc.name) + '"><span class="icon-btn-ico">🔍</span><span>주소검색</span></a>';
+      var notesHtml = '';
+      if (loc.keyLoc) notesHtml += '<div><b>열쇠</b> ' + escapeHtml(loc.keyLoc) + '</div>';
+      if (loc.pw) notesHtml += '<div><b>비밀번호</b> ' + escapeHtml(loc.pw) + '</div>';
+      if (loc.memo) notesHtml += '<div><b>메모</b> ' + escapeHtml(loc.memo) + '</div>';
+
+      var card2 = document.createElement('div');
+      card2.className = 'stop-card' + (isDone ? ' done' : '') + (isNext ? ' next' : '');
+      card2.dataset.cardidx = i;
+      card2.innerHTML =
+        '<button class="drag-handle" type="button" data-draghandle="' + i + '" title="눌러서 드래그하면 순서를 바로 옮길 수 있습니다">⠿</button>' +
+        '<input class="order-num order-num-input" type="number" inputmode="numeric" min="1" max="' + schedule.length + '" ' +
+          'value="' + (i+1) + '" data-moveto="' + i + '" title="순번을 직접 입력하면 그 자리로 바로 이동합니다">' +
+        '<div class="move-btns">' +
+          '<button class="btn-ghost" data-up="'+i+'" ' + (i===0?'disabled':'') + '>▲</button>' +
+          '<button class="btn-ghost" data-down="'+i+'" ' + (i===schedule.length-1?'disabled':'') + '>▼</button>' +
+        '</div>' +
+        '<div class="stop-body">' +
+          '<div class="stop-top"><span class="stop-name">' + escapeHtml(loc.name) + '</span>' +
+          '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span>' +
+          (isNext ? '<span class="badge start">▶ 다음 목적지</span>' : '') +
+          (entry.early ? '<span class="badge warn">⏰ ' + Math.round(entry.waitMin) + '분 대기 후 진행 (도착 ' + fmtHHMM(entry.arrivalMin) + ' / 오픈 ' + loc.openTime + ')</span>' : '') +
+          '<label class="done-check" style="margin-left:auto;"><input type="checkbox" data-done="'+i+'" ' + (isDone?'checked':'') + '> 도착 완료</label>' +
+          '</div>' +
+          (loc.address ? '<div class="stop-addr">' + escapeHtml(loc.address) + '</div>' : '') +
+          '<div class="leg-dist">' + distLine + '</div>' +
+          (notesHtml ? '<div class="stop-notes">' + notesHtml + '</div>' : '') +
+          '<div class="icon-actions">' + actionLink +
+            '<button class="icon-btn" data-photoshare="'+i+'" type="button"><span class="icon-btn-ico">📸</span><span>촬영전송</span></button>' +
+          '</div>' +
+          '<div class="stop-actions">' +
+            '<button class="btn-ghost btn-sm" data-toend="'+i+'" type="button">맨 뒤로 보내기</button></div>' +
+        '</div>';
+      list.appendChild(card2);
+      prev = loc;
+    });
+
+    // 마지막 배달처 다음, 복귀(출발지) 또는 별도로 정한 도착지까지 가는 구간을 마지막 카드로 보여줌.
+    // (legs 배열이 배달처 수보다 하나 더 많으면, 그 마지막 하나가 이 구간 정보)
+    var endLeg = (legs && legs.length > seq.length) ? legs[seq.length] : null;
+    if (endLeg) {
+      var endLoc = state.order.end || start;
+      var lastTimed = null;
+      for (var si = schedule.length - 1; si >= 0; si--) { if (schedule[si].arrivalMin != null) { lastTimed = schedule[si]; break; } }
+      var endArrivalMin = lastTimed ? (lastTimed.arrivalMin + DWELL_MIN + endLeg.durationS / 60) : null;
+      var lastCoordLoc = null;
+      for (var li = schedule.length - 1; li >= 0; li--) { if (hasCoords(schedule[li].loc)) { lastCoordLoc = schedule[li].loc; break; } }
+      var endLabel = state.order.end ? '도착지' : '복귀(출발지)';
+      var endDistLine = '이전 지점에서 실제 주행 ' + fmtKm(endLeg.distanceM) + ' (' + fmtMin(endLeg.durationS) + ')' +
+        (endArrivalMin != null ? ' · 예상 도착 ' + fmtHHMM(endArrivalMin) : '');
+      var endNavLink = hasCoords(endLoc)
+        ? '<a href="#" data-navend="1">' + navAppLabel() + ' 길찾기 →</a>'
+        : '<a href="' + navSearchLink(endLoc.address || endLoc.name) + '">' + navAppLabel() + '에서 주소 검색하기 →</a>';
+      var endCard = document.createElement('div');
+      endCard.className = 'stop-card';
+      endCard.innerHTML =
+        '<div class="order-num">🏁</div>' +
+        '<div class="stop-body">' +
+          '<div class="stop-top"><span class="stop-name">' + escapeHtml(endLoc.name) + '</span>' +
+          '<span class="badge start">' + endLabel + '</span></div>' +
+          (endLoc.address ? '<div class="stop-addr">' + escapeHtml(endLoc.address) + '</div>' : '') +
+          '<div class="leg-dist">' + endDistLine + '</div>' +
+          '<div class="stop-actions">' + endNavLink + '</div>' +
+        '</div>';
+      list.appendChild(endCard);
+      var navEndA = endCard.querySelector('[data-navend]');
+      if (navEndA) navEndA.addEventListener('click', function(e){ e.preventDefault(); openNavSingle(lastCoordLoc || start, endLoc); });
+    }
+
+    list.querySelectorAll('[data-navstop]').forEach(function(a){
+      a.addEventListener('click', function(e){
+        e.preventDefault();
+        var idx = parseInt(this.dataset.navstop, 10);
+        var prevLoc = idx === 0 ? start : schedule[idx-1].loc;
+        openNavSingle(prevLoc, schedule[idx].loc);
+      });
+    });
+    list.querySelectorAll('[data-up]').forEach(function(b){ b.addEventListener('click', function(){ moveStop(parseInt(this.dataset.up,10), -1); }); });
+    list.querySelectorAll('[data-down]').forEach(function(b){ b.addEventListener('click', function(){ moveStop(parseInt(this.dataset.down,10), 1); }); });
+    list.querySelectorAll('[data-toend]').forEach(function(b){ b.addEventListener('click', function(){ moveStopToEnd(parseInt(this.dataset.toend,10)); }); });
+    list.querySelectorAll('[data-moveto]').forEach(function(inp){
+      inp.addEventListener('change', function(){ moveStopTo(parseInt(this.dataset.moveto,10), parseInt(this.value,10)); });
+      inp.addEventListener('click', function(){ this.select(); });
+    });
+    // 드래그 핸들(⠿)을 손가락/마우스로 눌러서 원하는 자리로 끌어다 놓기.
+    // 화면에 안 보이는 먼 자리로 끌면 자동으로 스크롤되게 해서, 리스트가 길어도 옮길 수 있게 함.
+    list.querySelectorAll('[data-draghandle]').forEach(function(handle){
+      handle.addEventListener('pointerdown', function(e){
+        e.preventDefault();
+        var fromIdx = parseInt(this.dataset.draghandle, 10);
+        var card = this.closest('.stop-card');
+        card.classList.add('dragging');
+        var currentOverIdx = fromIdx;
+        var autoScrollTimer = null;
+
+        function clearOverClasses(){
+          list.querySelectorAll('.stop-card.drag-over').forEach(function(c){ c.classList.remove('drag-over'); });
+        }
+        function updateAutoScroll(clientY){
+          var margin = 60;
+          var rect = list.getBoundingClientRect();
+          if (autoScrollTimer) { clearInterval(autoScrollTimer); autoScrollTimer = null; }
+          if (clientY < margin) {
+            autoScrollTimer = setInterval(function(){ window.scrollBy(0, -12); }, 16);
+          } else if (clientY > window.innerHeight - margin) {
+            autoScrollTimer = setInterval(function(){ window.scrollBy(0, 12); }, 16);
+          }
+        }
+        function onMove(ev){
+          updateAutoScroll(ev.clientY);
+          var el = document.elementFromPoint(ev.clientX, ev.clientY);
+          var overCard = el && el.closest ? el.closest('.stop-card[data-cardidx]') : null;
+          clearOverClasses();
+          if (overCard) {
+            currentOverIdx = parseInt(overCard.dataset.cardidx, 10);
+            if (overCard !== card) overCard.classList.add('drag-over');
+          }
+        }
+        function onUp(){
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', onUp);
+          if (autoScrollTimer) { clearInterval(autoScrollTimer); autoScrollTimer = null; }
+          card.classList.remove('dragging');
+          clearOverClasses();
+          if (currentOverIdx !== fromIdx) moveStopTo(fromIdx, currentOverIdx + 1);
+        }
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+      });
+    });
+    list.querySelectorAll('[data-photoshare]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var idx = parseInt(this.dataset.photoshare,10);
+        startPhotoShare(schedule[idx].loc.name);
+      });
+    });
+    list.querySelectorAll('[data-done]').forEach(function(b){
+      b.addEventListener('change', function(){
+        var idx = parseInt(this.dataset.done,10);
+        var loc = schedule[idx].loc;
+        var justCompleted = this.checked;
+        if (justCompleted) completed[loc.id] = true; else delete completed[loc.id];
+        renderRoute();
+        if (justCompleted) promptNextAfterDone();
+      });
+    });
+
+    var remaining = schedule.length - Object.keys(completed).filter(function(id){ return schedule.some(function(e){ return e.loc.id===id; }); }).length;
+    var endLabel = state.order.end ? state.order.end.name : (start.name + ' (복귀)');
+    document.getElementById('routeSummary').textContent =
+      '출발 ' + fmtHHMM(departMin) + ' (' + start.name + ') → 도착 ' + endLabel + ' · 총 ' + seq.length + '곳 (남은 ' + remaining + '곳) · 거리 약 ' + fmtKm(totalDist) + ' · 시간 약 ' + fmtMin(totalDur) +
+      (lateCount ? ' · ⏰ 오픈시간 대기 ' + lateCount + '곳' : '');
+
+    // 경유지 여러 곳을 한 번에 넘기는 개수 제한이 앱마다 달라서(티맵 5곳, 카카오내비 3곳),
+    // 그 개수 단위로 구간을 나눠서 버튼/링크를 만들어줌.
+    var groupsEl = document.getElementById('legGroups'); groupsEl.innerHTML = '';
+    var legHintEl = document.getElementById('legGroupsHint');
+    var withCoordSeq = seq.filter(hasCoords);
+    var isKakao = getNavPref() === 'kakao';
+    var chunkSize = isKakao ? 4 : 6; // 카카오내비: 경유지3+목적지1, 티맵: 경유지5+목적지1
+    legHintEl.textContent = '';
+    var cursor = start;
+    for (var gi=0; gi<withCoordSeq.length; gi+=chunkSize){
+      var chunk = withCoordSeq.slice(gi, gi+chunkSize);
+      var legStops = [cursor].concat(chunk);
+      var fromLabel = cursor===start ? start.name : cursor.name;
+      var g = document.createElement('div');
+      g.className = 'leg-group';
+      if (isKakao) {
+        g.innerHTML = '<span>' + (gi+1) + '번 ~ ' + (gi+chunk.length) + '번 (' + escapeHtml(fromLabel) + ' 출발)</span>' +
+          '<a class="tmap-link" href="#" data-navgroup="' + gi + '">카카오내비로 열기 →</a>';
+        groupsEl.appendChild(g);
+        (function(stops){
+          g.querySelector('[data-navgroup]').addEventListener('click', function(e){ e.preventDefault(); kakaoNaviStartGroup(stops); });
+        })(legStops);
+      } else {
+        var link = tmapMultiLink(legStops);
+        if (!link) continue;
+        g.innerHTML = '<span>' + (gi+1) + '번 ~ ' + (gi+chunk.length) + '번 (' + escapeHtml(fromLabel) + ' 출발)</span>' +
+          '<a class="tmap-link" href="' + link + '">티맵으로 열기 →</a>';
+        groupsEl.appendChild(g);
+      }
+      cursor = chunk[chunk.length-1];
+    }
+  }
+
+  // state.locations 배열 안에서 loc을 위/아래로 한 칸 옮김(delta:-1 위, +1 아래).
+  // 이 배열 순서가 1번 "배달처 고르기" 체크박스 목록 순서로도 그대로 쓰이므로,
+  // 여기서 순서를 바꾸면 1번 목록 순서도 같이 바뀜.
+  function moveLocation(id, delta){
+    var idx = state.locations.findIndex(function(l){ return l.id === id; });
+    var j = idx + delta;
+    if (idx === -1 || j < 0 || j >= state.locations.length) return;
+    var tmp = state.locations[idx];
+    state.locations[idx] = state.locations[j];
+    state.locations[j] = tmp;
+    saveLocations();
+    renderAll();
+  }
+
+  function renderLocGrid(){
+    var qRaw = (document.getElementById('searchInput').value||'').trim();
+    var q = qRaw.toLowerCase();
+    var grid = document.getElementById('locGrid'); grid.innerHTML='';
+    var isFiltered = !!q;
+    // 상호명이 이 글자로 시작하는 곳만 걸러줌(주소/메모 안에 우연히 같은 글자가
+    // 들어있어서 엉뚱한 곳이 걸리는 걸 막기 위해 상호명만 봄).
+    var list = state.locations.filter(function(l){
+      if (!q) return true;
+      return (l.name || '').trim().toLowerCase().indexOf(q) === 0;
+    });
+    document.getElementById('locCount').textContent = '(' + state.locations.length + '곳)';
+    if (!list.length){ grid.innerHTML = '<div class="empty">검색 결과가 없습니다.</div>'; return; }
+    list.forEach(function(loc, i){
+      var el = document.createElement('div');
+      el.className = 'loc-card';
+      el.innerHTML =
+        (!isFiltered ? '<div class="move-btns" style="display:inline-flex;gap:4px;margin-bottom:6px;">' +
+          '<button class="btn-ghost btn-sm" type="button" data-locup="' + loc.id + '" ' + (i===0?'disabled':'') + '>▲</button>' +
+          '<button class="btn-ghost btn-sm" type="button" data-locdown="' + loc.id + '" ' + (i===list.length-1?'disabled':'') + '>▼</button>' +
+        '</div>' : '') +
+        '<div class="top"><span class="name">' + escapeHtml(loc.name) + '</span></div>' +
+        '<div class="addr">' + (loc.address ? escapeHtml(loc.address) : '주소 미등록') + '</div>' +
+        '<div><span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span> ' +
+          (state.startId===loc.id ? '<span class="badge start">🚩 출발지</span>' : '') +
+          (state.endId===loc.id ? '<span class="badge start">🏁 도착지</span>' : '') +
+          (loc.isStart ? '<span class="badge start">출발지 후보</span>' : '') +
+          (!hasCoords(loc) ? '<span class="badge warn">좌표없음</span>' : '') + '</div>' +
+        (loc.keyLoc ? '<div class="kv"><b>열쇠</b><span>' + escapeHtml(loc.keyLoc) + '</span></div>' : '') +
+        (loc.pw ? '<div class="kv"><b>비번</b><code>' + escapeHtml(loc.pw) + '</code></div>' : '') +
+        (loc.openTime ? '<div class="kv"><b>오픈</b><span>' + escapeHtml(loc.openTime) + '</span></div>' : '') +
+        (loc.memo ? '<div class="memo">' + escapeHtml(loc.memo) + '</div>' : '') +
+        (!hasCoords(loc) ? '<div style="display:flex;gap:10px;flex-wrap:wrap;"><a href="' + navSearchLink(loc.address||loc.name) + '">' + navAppLabel() + '에서 주소 검색 →</a>' +
+          '<a href="' + googleMapsSearchLink(loc.address||loc.name) + '" target="_blank">구글맵에서 좌표 찾기 →</a></div>' : '') +
+        '<div class="icon-actions">' +
+          '<button class="icon-btn' + (state.startId===loc.id ? ' active' : '') + '" data-setstart="' + loc.id + '"><span class="icon-btn-ico">🚩</span><span>' + (state.startId===loc.id ? '출발지 해제' : '출발지 설정') + '</span></button>' +
+          '<button class="icon-btn' + (state.endId===loc.id ? ' active' : '') + '" data-setend="' + loc.id + '"><span class="icon-btn-ico">🏁</span><span>' + (state.endId===loc.id ? '도착지 해제' : '도착지 설정') + '</span></button>' +
+        '</div>' +
+        '<div class="card-actions">' +
+          '<button class="btn-ghost btn-sm" data-edit="' + loc.id + '">수정</button><button class="btn-danger btn-sm" data-del="' + loc.id + '">삭제</button></div>';
+      grid.appendChild(el);
+    });
+    grid.querySelectorAll('[data-edit]').forEach(function(b){ b.addEventListener('click', function(){ startEdit(this.dataset.edit); }); });
+    grid.querySelectorAll('[data-del]').forEach(function(b){ b.addEventListener('click', function(){ deleteLoc(this.dataset.del); }); });
+    grid.querySelectorAll('[data-locup]').forEach(function(b){ b.addEventListener('click', function(){ moveLocation(this.dataset.locup, -1); }); });
+    grid.querySelectorAll('[data-locdown]').forEach(function(b){ b.addEventListener('click', function(){ moveLocation(this.dataset.locdown, 1); }); });
+    grid.querySelectorAll('[data-setstart]').forEach(function(b){ b.addEventListener('click', function(){ setStart(this.dataset.setstart); }); });
+    grid.querySelectorAll('[data-setend]').forEach(function(b){ b.addEventListener('click', function(){ setEnd(this.dataset.setend); }); });
+  }
+
+  function renderAll(){ renderPicker(); renderLocGrid(); }
+
+  // ---------- form ----------
+  function startEdit(id){
+    var loc = locById(id); if (!loc) return;
+    document.getElementById('editId').value = loc.id;
+    document.getElementById('f_name').value = loc.name || '';
+    document.getElementById('f_category').value = loc.category || 'kitchen';
+    document.getElementById('f_categoryCustom').value = loc.categoryCustom || '';
+    toggleCustomCatWrap();
+    document.getElementById('f_address').value = loc.address || '';
+    document.getElementById('f_lat').value = hasCoords(loc) ? loc.lat : '';
+    document.getElementById('f_lng').value = hasCoords(loc) ? loc.lng : '';
+    document.getElementById('f_key').value = loc.keyLoc || '';
+    document.getElementById('f_pw').value = loc.pw || '';
+    document.getElementById('f_open').value = loc.openTime || '';
+    document.getElementById('f_memo').value = loc.memo || '';
+    document.getElementById('f_isStart').checked = !!loc.isStart;
+    document.getElementById('cancelEditBtn').style.display = 'inline-block';
+    document.getElementById('saveLocBtn').textContent = '수정 저장';
+    switchTab('formCard');
+    document.getElementById('locForm').scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+  function resetForm(){
+    document.getElementById('locForm').reset();
+    document.getElementById('editId').value = '';
+    document.getElementById('cancelEditBtn').style.display = 'none';
+    document.getElementById('saveLocBtn').textContent = '업체 저장';
+  }
+  function deleteLoc(id){
+    state.locations = state.locations.filter(function(l){ return l.id!==id; });
+    delete state.selected[id];
+    if (state.startId===id) state.startId=null;
+    if (state.endId===id) state.endId=null;
+    saveStartEnd();
+    saveLocations(); renderAll(); toast('삭제했습니다.');
+  }
+
+  function toggleCustomCatWrap(){
+    var v = document.getElementById('f_category').value;
+    document.getElementById('customCatWrap').style.display = (v === 'custom') ? 'grid' : 'none';
+  }
+  document.getElementById('f_category').addEventListener('change', toggleCustomCatWrap);
+  toggleCustomCatWrap();
+
+  document.getElementById('cancelEditBtn').addEventListener('click', resetForm);
+
+  document.getElementById('curLocBtn').addEventListener('click', function(){
+    if (!navigator.geolocation){ toast('이 브라우저에서는 위치 가져오기가 지원되지 않아요.'); return; }
+    var btn = this; var orig = btn.textContent;
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 위치 확인 중...';
+    navigator.geolocation.getCurrentPosition(function(pos){
+      var lat = pos.coords.latitude, lng = pos.coords.longitude;
+      document.getElementById('f_lat').value = lat;
+      document.getElementById('f_lng').value = lng;
+      fetch('/api/reverse-geocode?lat=' + lat + '&lng=' + lng)
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d && d.address){
+            document.getElementById('f_address').value = d.address;
+            toast('현재 위치를 가져왔어요: ' + d.address);
+          } else {
+            toast('좌표는 가져왔지만 주소 변환에는 실패했어요. 주소를 직접 입력해주세요.');
+          }
+        })
+        .catch(function(){ toast('좌표는 가져왔지만 주소 변환 중 오류가 발생했어요. 주소를 직접 입력해주세요.'); })
+        .then(function(){ btn.disabled=false; btn.textContent=orig; });
+    }, function(err){
+      toast('위치를 가져오지 못했어요. 위치 권한을 허용했는지 확인해주세요.');
+      btn.disabled=false; btn.textContent=orig;
+    }, { enableHighAccuracy: true, timeout: 10000 });
+  });
+
+  document.getElementById('regeoBtn').addEventListener('click', function(){
+    var q = document.getElementById('f_address').value.trim() || document.getElementById('f_name').value.trim();
+    if (!q){ toast('먼저 주소나 이름을 입력해주세요.'); return; }
+    var btn = this; var orig = btn.textContent;
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> 찾는 중...';
+    geocode(q).then(function(res){
+      if (res.ok && res.data && typeof res.data.lat==='number'){
+        document.getElementById('f_lat').value = res.data.lat;
+        document.getElementById('f_lng').value = res.data.lng;
+        toast('좌표를 찾았어요: ' + (res.data.matched||''));
+      } else {
+        toast('좌표를 찾지 못했어요. 주소를 조금 더 정확히 입력해보세요.');
+      }
+    }).catch(function(){ toast('좌표 검색 중 오류가 발생했어요.'); })
+      .then(function(){ btn.disabled=false; btn.textContent=orig; });
+  });
+
+  document.getElementById('locForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var id = document.getElementById('editId').value;
+    var lat = parseFloat(document.getElementById('f_lat').value);
+    var lng = parseFloat(document.getElementById('f_lng').value);
+    var name = document.getElementById('f_name').value.trim();
+    var address = document.getElementById('f_address').value.trim();
+    if (!name){ toast('상호명을 입력해주세요.'); return; }
+    if (!address){ toast('주소를 입력해주세요.'); return; }
+
+    var categoryVal = document.getElementById('f_category').value;
+    var data = {
+      name: name, category: categoryVal, address: address,
+      categoryCustom: (categoryVal === 'custom') ? document.getElementById('f_categoryCustom').value.trim() : '',
+      lat: isNaN(lat) ? null : lat, lng: isNaN(lng) ? null : lng,
+      keyLoc: document.getElementById('f_key').value.trim(), pw: document.getElementById('f_pw').value.trim(),
+      openTime: document.getElementById('f_open').value || '', memo: document.getElementById('f_memo').value.trim(),
+      isStart: document.getElementById('f_isStart').checked, updatedAt: Date.now()
+    };
+
+    var dupAddr = state.locations.some(function(l){ return l.id !== id && l.address && l.address.trim() === address; });
+    if (dupAddr){ toast('같은 주소를 쓰는 배달처가 이미 있어요. (같은 건물이면 정상, 오탈자면 확인해주세요)'); }
+
+    var saveBtn = document.getElementById('saveLocBtn');
+    var orig = saveBtn.textContent;
+
+    function finishSave(finalData){
+      if (id){
+        var idx = state.locations.findIndex(function(l){ return l.id===id; });
+        if (idx!==-1) state.locations[idx] = Object.assign({}, state.locations[idx], finalData);
+      } else {
+        finalData.id = 'loc_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+        state.locations.push(finalData);
+      }
+      saveLocations(); resetForm(); renderAll();
+    }
+
+    if (data.lat==null || data.lng==null){
+      saveBtn.disabled = true; saveBtn.innerHTML = '<span class="spinner"></span> 좌표 찾는 중...';
+      geocode(address).then(function(res){
+        if (res.ok && res.data && typeof res.data.lat==='number'){
+          data.lat = res.data.lat; data.lng = res.data.lng;
+          toast('저장했어요 (좌표 자동 인식: ' + (res.data.matched||'') + ')');
+        } else {
+          toast('저장은 했지만 좌표를 자동으로 못 찾았어요. 나중에 "좌표 직접 입력"에서 다시 찾기를 눌러보세요.');
+        }
+        finishSave(data);
+      }).catch(function(){
+        toast('저장은 했지만 좌표 검색 중 오류가 있었어요.');
+        finishSave(data);
+      }).then(function(){ saveBtn.disabled=false; saveBtn.textContent=orig; });
+    } else {
+      finishSave(data);
+      toast('저장했습니다.');
+    }
+  });
+
+  document.getElementById('searchInput').addEventListener('input', renderLocGrid);
+
+  // ---------- 다른 기기로 데이터 내보내기/불러오기 ----------
+  document.getElementById('exportBtn').addEventListener('click', function(){
+    var data = { exportedAt: Date.now(), locations: state.locations };
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = '업체목록_' + new Date().toISOString().slice(0,10) + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    toast('업체 목록을 파일로 내려받았어요.');
+  });
+
+  document.getElementById('importBtn').addEventListener('click', function(){
+    document.getElementById('importFile').click();
+  });
+
+  document.getElementById('importFile').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      try {
+        var parsed = JSON.parse(reader.result);
+        var imported = Array.isArray(parsed) ? parsed : (parsed.locations || []);
+        if (!Array.isArray(imported) || !imported.length){ toast('불러올 데이터가 없어요.'); return; }
+        var replace = confirm(
+          '지금 이 기기의 업체 목록을 파일 내용으로 완전히 덮어쓸까요?\n\n' +
+          '"확인" = 덮어쓰기 (지금 기기에 있던 목록은 사라져요)\n' +
+          '"취소" = 기존 목록에 합치기 (같은 업체는 건너뜀)'
+        );
+        if (replace) {
+          state.locations = imported;
+        } else {
+          var existingIds = {};
+          state.locations.forEach(function(l){ existingIds[l.id] = true; });
+          imported.forEach(function(l){ if (!existingIds[l.id]) state.locations.push(l); });
+        }
+        saveLocations();
+        renderAll();
+        toast('불러오기를 완료했어요. (' + imported.length + '곳)');
+      } catch (err) {
+        toast('파일을 읽는 중 오류가 발생했어요. 올바른 파일인지 확인해주세요.');
+      }
+      document.getElementById('importFile').value = '';
+    };
+    reader.readAsText(file);
+  });
+  document.getElementById('clearPickBtn').addEventListener('click', function(){ state.selected={}; renderPicker(); updatePickerCount(); });
+  document.getElementById('departTime').addEventListener('change', function(){ if (state.order) renderRoute(); });
+
+  function runCalc(btn){
+    var startLoc = state.startId ? locById(state.startId) : null;
+    var stops = Object.keys(state.selected).map(locById).filter(Boolean);
+    if (!startLoc){ toast('출발지를 선택해주세요 (업체 목록에서 "출발지로 설정").'); return; }
+    if (!hasCoords(startLoc)){ toast('출발지에 좌표가 없어 순서를 계산할 수 없어요.'); return; }
+
+    // 도착지: 따로 안 정했으면 출발지와 동일(=복귀)로 취급. 좌표가 없으면 무시하고 복귀로 처리.
+    var endLocRaw = state.endId ? locById(state.endId) : null;
+    var sameAsStart = !endLocRaw || endLocRaw.id === startLoc.id;
+    if (endLocRaw && !hasCoords(endLocRaw)){
+      toast('도착지에 좌표가 없어, 도착지 설정 없이(출발지로 복귀) 계산했어요.');
+      sameAsStart = true;
+    }
+    var endLoc = sameAsStart ? null : endLocRaw;
+
+    stops = stops.filter(function(s){ return s.id!==startLoc.id && (!endLoc || s.id!==endLoc.id); });
+    var withCoords = stops.filter(hasCoords);
+    var withoutCoords = stops.filter(function(s){ return !hasCoords(s); });
+    if (!withCoords.length){ toast('좌표가 있는 배달처를 1곳 이상 선택해주세요.'); return; }
+
+    var orig = btn.textContent;
+    var departMin = parseHHMM(document.getElementById('departTime').value) || 180;
+    var modeEl = document.querySelector('input[name="calcMode"]:checked');
+    var calcMode = modeEl ? modeEl.value : 'auto';
+    // 수동 배정 모드도 처음 배치할 땐 "오픈시간 고려" 방식을 기본으로 씀(요청하신 대로).
+    var hasOpenTimes = (calcMode === 'auto' || calcMode === 'manual') && withCoords.some(function(s){ return parseHHMM(s.openTime) != null; });
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> 계산 중...';
+
+    var routePromise = hasOpenTimes ? fetchTimeWindowRoute(startLoc, withCoords, departMin, endLoc) : fetchRealRoute(startLoc, withCoords, false, endLoc);
+
+    routePromise.then(function(res){
+      if (!res.ok || !res.data || !res.data.order){
+        toast('경로 계산에 실패했어요 (' + (res.data && res.data.error || '') + '). 잠시 후 다시 시도해주세요.');
+        return;
+      }
+      // "오늘 순서 계산하기"는 매번 새 배송 묶음을 만드는 것이므로, 예전 경로에서
+      // "도착 완료" 체크했던 기록은 새로 가져오지 않고 항상 깨끗하게 시작함.
+      // (전에 갔던 곳을 오늘 또 골랐다고 해서 자동으로 완료 처리되면 안 되므로.)
+      var seq = res.data.order.map(function(s){ return locById(s._ref) || s; }).concat(withoutCoords);
+      state.order = { start: startLoc, end: endLoc, seq: seq, legs: res.data.legs, totalDistanceM: res.data.totalDistanceM, totalDurationS: res.data.totalDurationS, completed: {}, pinnedIds: [], manualMode: calcMode === 'manual' };
+      renderRoute();
+      switchTab('routeCard');
+      window.scrollTo({ top:0, behavior:'smooth' });
+      if (withoutCoords.length) toast('좌표 없는 ' + withoutCoords.length + '곳은 목록 맨 뒤에 순서 미정으로 추가했어요.');
+      else if (hasOpenTimes) toast('오픈시간을 고려해서 순서를 최적화했어요.');
+    }).catch(function(){
+      toast('경로 계산 중 오류가 발생했어요. 네트워크 상태를 확인해주세요.');
+    }).then(function(){ btn.disabled=false; btn.textContent=orig; });
+  }
+
+  document.getElementById('calcBtn').addEventListener('click', function(){ runCalc(this); });
+  document.getElementById('reoptBtn').addEventListener('click', function(){
+    toast('전체를 다시 최적화합니다 (직접 조정한 순서는 초기화돼요).');
+    runCalc(document.getElementById('reoptBtn'));
+  });
+
+  // ---------- map ----------
+  var leafletMap = null;
+  var mapLayerGroup = null;
+  function ensureMap(){
+    if (leafletMap) return leafletMap;
+    leafletMap = L.map('mapEl');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(leafletMap);
+    return leafletMap;
+  }
+
+  function showRouteOnMap(){
+    if (!state.order){ toast('먼저 "오늘 순서 계산하기"를 눌러주세요.'); return; }
+    var start = state.order.start;
+    if (!hasCoords(start)){ toast('출발지에 좌표가 없어 지도를 표시할 수 없어요.'); return; }
+    var seq = state.order.seq.filter(hasCoords);
+
+    document.getElementById('mapModal').style.display = 'flex';
+    var map = ensureMap();
+    setTimeout(function(){ map.invalidateSize(); }, 60);
+
+    if (mapLayerGroup) mapLayerGroup.remove();
+    mapLayerGroup = L.layerGroup().addTo(map);
+
+    var endLoc = (state.order.end && hasCoords(state.order.end)) ? state.order.end : null;
+    var latlngs = [[start.lat, start.lng]].concat(seq.map(function(s){ return [s.lat, s.lng]; })).concat(endLoc ? [[endLoc.lat, endLoc.lng]] : []);
+    var startIcon = L.divIcon({ className:'', html:'<div class="map-pin-start">🚩</div>', iconSize:[26,26] });
+    L.marker([start.lat, start.lng], { icon:startIcon }).addTo(mapLayerGroup).bindPopup('출발지: ' + escapeHtml(start.name));
+    seq.forEach(function(s, i){
+      var numIcon = L.divIcon({ className:'', html:'<div class="map-pin-num">' + (i+1) + '</div>', iconSize:[24,24] });
+      L.marker([s.lat, s.lng], { icon:numIcon }).addTo(mapLayerGroup)
+        .bindPopup((i+1) + '. ' + escapeHtml(s.name) + (s.address ? '<br>' + escapeHtml(s.address) : ''));
+    });
+    if (endLoc){
+      var endIcon = L.divIcon({ className:'', html:'<div class="map-pin-start">🏁</div>', iconSize:[26,26] });
+      L.marker([endLoc.lat, endLoc.lng], { icon:endIcon }).addTo(mapLayerGroup).bindPopup('도착지: ' + escapeHtml(endLoc.name));
+    }
+    map.fitBounds(L.latLngBounds(latlngs), { padding:[30,30] });
+  }
+
+  document.getElementById('showMapBtn').addEventListener('click', showRouteOnMap);
+  document.getElementById('closeMapBtn').addEventListener('click', function(){
+    document.getElementById('mapModal').style.display = 'none';
+  });
+
+  // ---------- 길찾기 앱 설정 UI ----------
+  function applyNavPrefUI(){
+    var pref = getNavPref();
+    document.getElementById('navPrefTmap').checked = (pref === 'tmap');
+    document.getElementById('navPrefKakao').checked = (pref === 'kakao');
+  }
+  document.getElementById('navPrefTmap').addEventListener('change', function(){
+    if (this.checked) { setNavPref('tmap'); applyNavPrefUI(); if (state.order) renderRoute(); renderLocGrid(); }
+  });
+  document.getElementById('navPrefKakao').addEventListener('change', function(){
+    if (this.checked) { setNavPref('kakao'); applyNavPrefUI(); if (state.order) renderRoute(); renderLocGrid(); }
+  });
+  applyNavPrefUI();
+  document.getElementById('resetDoneBtn').addEventListener('click', function(){
+    if (state.order) state.order.completed = {};
+    renderRoute();
+    toast('완료 표시를 초기화했어요.');
+  });
+
+  document.getElementById('copyRouteBtn').addEventListener('click', function(){
+    if (!state.order) return;
+    var departMin = parseHHMM(document.getElementById('departTime').value) || 180;
+    var schedule = estimateSchedule(departMin, state.order.seq, state.order.legs);
+    var lines = [fmtHHMM(departMin) + ' ' + state.order.start.name + ' (출발)'];
+    schedule.forEach(function(entry, i){
+      lines.push((i+1) + '. [' + (entry.arrivalMin!=null?fmtHHMM(entry.arrivalMin):'--:--') + '] ' + entry.loc.name + (entry.loc.address ? ' - ' + entry.loc.address : '') + (entry.early ? ' (⏰' + Math.round(entry.waitMin) + '분 대기)' : ''));
+    });
+    var legs2 = state.order.legs;
+    if (legs2 && legs2.length > state.order.seq.length){
+      var endLoc2 = state.order.end || state.order.start;
+      var lastTimed2 = null;
+      for (var si2 = schedule.length - 1; si2 >= 0; si2--) { if (schedule[si2].arrivalMin != null) { lastTimed2 = schedule[si2]; break; } }
+      var endLeg2 = legs2[state.order.seq.length];
+      var endArr2 = lastTimed2 ? (lastTimed2.arrivalMin + DWELL_MIN + endLeg2.durationS/60) : null;
+      lines.push('[' + (endArr2!=null?fmtHHMM(endArr2):'--:--') + '] ' + endLoc2.name + (state.order.end ? ' (도착지)' : ' (복귀)'));
+    }
+    var text = lines.join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){ toast('복사했어요.'); }, function(){ toast('복사에 실패했어요.'); });
+    } else { toast('이 브라우저에서는 복사가 지원되지 않아요.'); }
+  });
+
+  function initApp(){
+    state.locations = loadLocations();
+    loadStartEnd();
+    state.order = loadOrder();
+    renderAll();
+    renderRoute();
+    (function initTab(){
+      var last = null;
+      try { last = sessionStorage.getItem('deliveryRoute.activeTab'); } catch (e) {}
+      switchTab(TAB_IDS.indexOf(last) !== -1 ? last : 'pickerCard');
+    })();
+    document.getElementById('appWrap').style.display = '';
+  }
+
+  // 직원용 비밀번호 잠금 — 하루 한 번만 물어봄(그날 이미 맞혔으면 다시 안 물어봄).
+  // 비밀번호를 바꾸고 싶으면: 바로 아래 APP_PASSWORD 값만 원하는 비밀번호로 고치고
+  // GitHub에 커밋하면 됨(Vercel 설정 화면 들어갈 필요 없음).
+  var APP_PASSWORD = '2580';
+  var LOCK_KEY = 'deliveryRoute.lockOk.v1';
+  function submitLockPw(){
+    var input = document.getElementById('lockPwInput');
+    var btn = document.getElementById('lockPwBtn');
+    var err = document.getElementById('lockPwErr');
+    var pw = input.value;
+    err.textContent = '';
+    if (pw === APP_PASSWORD){
+      try { localStorage.setItem(LOCK_KEY, JSON.stringify({ date: todayStr() })); } catch (e) {}
+      document.getElementById('lockScreen').style.display = 'none';
+      initApp();
+    } else {
+      err.textContent = '비밀번호가 틀렸어요.';
+      input.value = ''; input.focus();
+    }
+  }
+  document.getElementById('lockPwBtn').addEventListener('click', submitLockPw);
+  document.getElementById('lockPwInput').addEventListener('keydown', function(e){ if (e.key === 'Enter') submitLockPw(); });
+
+  (function checkLockAndInit(){
+    var okToday = false;
+    try {
+      var v = JSON.parse(localStorage.getItem(LOCK_KEY) || 'null');
+      okToday = !!(v && v.date === todayStr());
+    } catch (e) {}
+    if (okToday){
+      document.getElementById('lockScreen').style.display = 'none';
+      initApp();
+    } else {
+      document.getElementById('lockScreen').style.display = 'flex';
+      setTimeout(function(){ document.getElementById('lockPwInput').focus(); }, 50);
+    }
+  })();
+
+  // 서비스워커 등록 — 크롬이 "설치 가능한 앱"으로 인식하는 데 필요한 조건 중 하나.
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('/sw.js').catch(function(){});
+    });
+  }
+})();
+</script>
+</body>
+</html>
