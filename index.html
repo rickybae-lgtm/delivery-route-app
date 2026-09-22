@@ -982,15 +982,13 @@
         imgs.forEach(function(im, i){
           var col = i % cols, row = Math.floor(i / cols);
           var cx = col * (CELL + GAP), cy = row * (CELL + GAP);
-          var scale = Math.max(CELL / im.w, CELL / im.h);
+          // 예전엔 칸을 꽉 채우려고 사진을 정사각형에 맞춰 잘라냈는데(가운데만 남기고 위아래/양옆
+          // 잘림), 그러다 보니 사진 끄트머리가 잘려 보이는 문제가 있었음. 그래서 사진을 자르지
+          // 않고 칸 안에 통째로 들어가게(꽉 안 차도 전체가 다 보이게) 바꿈 — Math.min으로 계산.
+          var scale = Math.min(CELL / im.w, CELL / im.h);
           var dw = im.w * scale, dh = im.h * scale;
           var dx = cx + (CELL - dw) / 2, dy = cy + (CELL - dh) / 2;
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(cx, cy, CELL, CELL);
-          ctx.clip();
           ctx.drawImage(im.src, dx, dy, dw, dh);
-          ctx.restore();
           if (im.bitmap && im.src.close) im.src.close();
         });
       }
