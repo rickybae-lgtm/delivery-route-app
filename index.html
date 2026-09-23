@@ -1436,7 +1436,7 @@
   // 맨 위 고정. 그 아래로는 "구분"이 사입처인 곳들을 가나다순으로(나중에 사입처를 새로 추가해도
   // 자동으로 이 위쪽 그룹에 들어가게), 그 다음 매장명인 곳들을 가나다순으로 보여줌.
   // 자동으로 순서가 매겨지니까 예전에 있던 수동 위/아래 이동 버튼은 이제 뜻이 없어져서 같이 뺌.
-  var PINNED_LOC_NAMES = ['자택', '경성', '가락시장', '강동수산', '연어', '우주수산'];
+  var PINNED_LOC_NAMES = ['자택', '경성', '가락시장', '강동수산', '연어 우주수산'];
   function pinnedLocIndex(name){ return PINNED_LOC_NAMES.indexOf((name || '').trim()); }
   function locSortGroup(loc){
     if (pinnedLocIndex(loc.name) !== -1) return 0; // 고정 6곳
