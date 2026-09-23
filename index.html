@@ -1437,7 +1437,23 @@
   // 자동으로 이 위쪽 그룹에 들어가게), 그 다음 매장명인 곳들을 가나다순으로 보여줌.
   // 자동으로 순서가 매겨지니까 예전에 있던 수동 위/아래 이동 버튼은 이제 뜻이 없어져서 같이 뺌.
   var PINNED_LOC_NAMES = ['자택', '경성', '가락시장', '강동수산', '연어 우주수산'];
-  function pinnedLocIndex(name){ return PINNED_LOC_NAMES.indexOf((name || '').trim()); }
+  // 정확히 글자가 똑같아야만 고정되면, 실제 등록된 이름에 괄호(전화번호 등)나 공백이 하나라도
+  // 다르면(예: "가락시장 " / "강동 수산") 고정이 안 먹혀서 전부 가나다순으로 섞여버림. 그래서
+  // 괄호 안 내용·공백을 지우고 비교하고, 그래도 정확히 안 맞으면 한쪽이 한쪽을 포함하는지까지 봄.
+  function normalizeLocName(s){
+    return String(s || '').replace(/\([^)]*\)/g, '').replace(/\s+/g, '').trim();
+  }
+  var NORM_PINNED_LOC_NAMES = PINNED_LOC_NAMES.map(normalizeLocName);
+  function pinnedLocIndex(name){
+    var norm = normalizeLocName(name);
+    if (!norm) return -1;
+    var idx = NORM_PINNED_LOC_NAMES.indexOf(norm);
+    if (idx !== -1) return idx;
+    for (var i = 0; i < NORM_PINNED_LOC_NAMES.length; i++){
+      if (norm.indexOf(NORM_PINNED_LOC_NAMES[i]) !== -1 || NORM_PINNED_LOC_NAMES[i].indexOf(norm) !== -1) return i;
+    }
+    return -1;
+  }
   function locSortGroup(loc){
     if (pinnedLocIndex(loc.name) !== -1) return 0; // 고정 6곳
     if (loc.kind === 'supplier') return 1;          // 그 외 사입처
