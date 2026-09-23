@@ -285,6 +285,14 @@
       <input type="hidden" id="editId">
       <div class="row2">
         <label class="field"><span class="lbl">상호명 *</span><input type="text" id="f_name" placeholder="예: 상록회관, 미소식당" required></label>
+        <label class="field"><span class="lbl">구분</span>
+          <select id="f_kind">
+            <option value="store">매장명 (배송지)</option>
+            <option value="supplier">사입처 (물건 받는 곳)</option>
+          </select>
+        </label>
+      </div>
+      <div class="row2" style="margin-top:10px;">
         <label class="field"><span class="lbl">보관 구분</span>
           <select id="f_category">
             <option value="none">해당없음</option>
@@ -1424,14 +1432,33 @@
     renderAll();
   }
 
+  // 자택/경성/가락시장/강동수산/연어/우주수산은 매일 맨 위에서 바로 찾는 자리라 이 순서 그대로
+  // 맨 위 고정. 그 아래로는 "구분"이 사입처인 곳들을 가나다순으로(나중에 사입처를 새로 추가해도
+  // 자동으로 이 위쪽 그룹에 들어가게), 그 다음 매장명인 곳들을 가나다순으로 보여줌.
+  // 자동으로 순서가 매겨지니까 예전에 있던 수동 위/아래 이동 버튼은 이제 뜻이 없어져서 같이 뺌.
+  var PINNED_LOC_NAMES = ['자택', '경성', '가락시장', '강동수산', '연어', '우주수산'];
+  function pinnedLocIndex(name){ return PINNED_LOC_NAMES.indexOf((name || '').trim()); }
+  function locSortGroup(loc){
+    if (pinnedLocIndex(loc.name) !== -1) return 0; // 고정 6곳
+    if (loc.kind === 'supplier') return 1;          // 그 외 사입처
+    return 2;                                        // 매장명
+  }
+  function sortLocationsForDisplay(locs){
+    return locs.slice().sort(function(a, b){
+      var ga = locSortGroup(a), gb = locSortGroup(b);
+      if (ga !== gb) return ga - gb;
+      if (ga === 0) return pinnedLocIndex(a.name) - pinnedLocIndex(b.name);
+      return (a.name || '').localeCompare((b.name || ''), 'ko');
+    });
+  }
+
   function renderLocGrid(){
     var qRaw = (document.getElementById('searchInput').value||'').trim();
     var q = qRaw.toLowerCase();
     var grid = document.getElementById('locGrid'); grid.innerHTML='';
-    var isFiltered = !!q;
     // 상호명이 이 글자로 시작하는 곳만 걸러줌(주소/메모 안에 우연히 같은 글자가
     // 들어있어서 엉뚱한 곳이 걸리는 걸 막기 위해 상호명만 봄).
-    var list = state.locations.filter(function(l){
+    var list = sortLocationsForDisplay(state.locations).filter(function(l){
       if (!q) return true;
       return (l.name || '').trim().toLowerCase().indexOf(q) === 0;
     });
@@ -1441,13 +1468,10 @@
       var el = document.createElement('div');
       el.className = 'loc-card';
       el.innerHTML =
-        (!isFiltered ? '<div class="move-btns" style="display:inline-flex;gap:4px;margin-bottom:6px;">' +
-          '<button class="btn-ghost btn-sm" type="button" data-locup="' + loc.id + '" ' + (i===0?'disabled':'') + '>▲</button>' +
-          '<button class="btn-ghost btn-sm" type="button" data-locdown="' + loc.id + '" ' + (i===list.length-1?'disabled':'') + '>▼</button>' +
-        '</div>' : '') +
         '<div class="top"><span class="name">' + escapeHtml(loc.name) + '</span></div>' +
         '<div class="addr">' + (loc.address ? escapeHtml(loc.address) : '주소 미등록') + '</div>' +
-        '<div><span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span> ' +
+        '<div><span class="badge">' + (loc.kind === 'supplier' ? '🧺 사입처' : '🏬 매장명') + '</span> ' +
+          '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span> ' +
           (state.startId===loc.id ? '<span class="badge start">🚩 출발지</span>' : '') +
           (state.endId===loc.id ? '<span class="badge start">🏁 도착지</span>' : '') +
           (loc.isStart ? '<span class="badge start">출발지 후보</span>' : '') +
@@ -1481,6 +1505,7 @@
     var loc = locById(id); if (!loc) return;
     document.getElementById('editId').value = loc.id;
     document.getElementById('f_name').value = loc.name || '';
+    document.getElementById('f_kind').value = loc.kind || 'store';
     document.getElementById('f_category').value = loc.category || 'kitchen';
     document.getElementById('f_categoryCustom').value = loc.categoryCustom || '';
     toggleCustomCatWrap();
@@ -1576,7 +1601,7 @@
 
     var categoryVal = document.getElementById('f_category').value;
     var data = {
-      name: name, category: categoryVal, address: address,
+      name: name, kind: document.getElementById('f_kind').value || 'store', category: categoryVal, address: address,
       categoryCustom: (categoryVal === 'custom') ? document.getElementById('f_categoryCustom').value.trim() : '',
       lat: isNaN(lat) ? null : lat, lng: isNaN(lng) ? null : lng,
       keyLoc: document.getElementById('f_key').value.trim(), pw: document.getElementById('f_pw').value.trim(),
