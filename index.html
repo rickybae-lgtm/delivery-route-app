@@ -709,12 +709,16 @@
     if (!pickable.length){ wrap.innerHTML = '<div class="empty">출발지/도착지로 지정된 곳 외에 배달처가 없습니다.</div>'; return; }
     if (pickerShowSelectedOnly && !visible.length){ wrap.innerHTML = '<div class="empty">아직 선택한 곳이 없어요.</div>'; return; }
     if (!visible.length){ wrap.innerHTML = '<div class="empty">"' + escapeHtml(qRaw) + '"와 일치하는 업체가 없어요.</div>'; return; }
+    // 사입처/배송매장을 한눈에 구분할 수 있게, 체크박스 옆에 살짝 표시만 달아줌(뱃지).
+    // 검색·정렬 순서 자체는 안 건드리고 그냥 눈에 띄는 표시만 추가.
     visible.forEach(function(loc){
       var row = document.createElement('label');
       row.className = 'pick-row';
       row.innerHTML =
         '<input type="checkbox" data-sel-id="' + loc.id + '" ' + (state.selected[loc.id]?'checked':'') + '>' +
         '<span class="name">' + escapeHtml(loc.name) + '</span>' +
+        '<span class="badge" style="' + (locSortGroup(loc) === 2 ? 'background:#eef2ff;color:#3730a3;' : 'background:#fef3c7;color:#92400e;') + '">' +
+          (locSortGroup(loc) === 2 ? '🏬 매장' : '🧺 사입처') + '</span>' +
         '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span>' +
         (!hasCoords(loc) ? '<span class="badge warn">좌표없음</span>' : '');
       wrap.appendChild(row);
