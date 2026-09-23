@@ -749,7 +749,7 @@
     hint.textContent = state.locations.length ? '' : '업체를 먼저 등록해주세요.';
     updatePickerCount();
     if (!state.locations.length){ wrap.innerHTML = '<div class="empty">등록된 배달처가 없습니다.</div>'; return; }
-    var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
+    var pickable = sortLocationsForDisplay(state.locations).filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
     renderPickerRows(pickable);
   }
   (function initPickerSearch(){
@@ -757,7 +757,7 @@
     if (!searchEl) return;
     searchEl.addEventListener('input', function(){
       // 체크박스 목록만 다시 그림(검색창 자체는 다시 안 그려서 커서/포커스 유지됨).
-      var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
+      var pickable = sortLocationsForDisplay(state.locations).filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
       renderPickerRows(pickable);
     });
   })();
@@ -770,7 +770,7 @@
       // 걸러져서 하나도 안 보이는 일이 없도록 검색어를 지워줌.
       var searchEl = document.getElementById('pickerSearch');
       if (pickerShowSelectedOnly && searchEl) searchEl.value = '';
-      var pickable = state.locations.filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
+      var pickable = sortLocationsForDisplay(state.locations).filter(function(loc){ return loc.id !== state.startId && loc.id !== state.endId; });
       renderPickerRows(pickable);
     });
   })();
