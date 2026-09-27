@@ -401,6 +401,14 @@
   </div>
 </div>
 
+<div id="noteWarnModal" style="display:none; position:fixed; inset:0; z-index:80; background:rgba(0,0,0,.6); align-items:center; justify-content:center; padding:16px;">
+  <div style="background:#fff3b0; border:3px solid #f5c400; border-radius:14px; padding:20px; width:min(420px,100%); display:flex; flex-direction:column; gap:12px; max-height:88vh; overflow:auto; box-shadow:0 8px 24px rgba(0,0,0,.3);">
+    <div style="font-size:15px; font-weight:800; color:#c81e1e;">⚠️ <span id="noteWarnLocName"></span> 특이사항</div>
+    <div id="noteWarnText" style="font-size:22px; font-weight:800; color:#c81e1e; line-height:1.4; white-space:pre-wrap;"></div>
+    <button type="button" class="btn-primary btn-sm" id="noteWarnOkBtn" style="align-self:flex-end;">확인</button>
+  </div>
+</div>
+
 <script>
 (function(){
   "use strict";
@@ -1275,6 +1283,20 @@
     closeNoteEditor();
     renderRoute();
   });
+  // 도착완료 눌렀을 때 뜨는 눈에 띄는 특이사항 경고 팝업 (노란 바탕 + 빨간 글씨).
+  function showNoteWarnPopup(locName, text, onConfirm){
+    document.getElementById('noteWarnLocName').textContent = locName;
+    document.getElementById('noteWarnText').textContent = text;
+    var modal = document.getElementById('noteWarnModal');
+    modal.style.display = 'flex';
+    var okBtn = document.getElementById('noteWarnOkBtn');
+    var handler = function(){
+      modal.style.display = 'none';
+      okBtn.removeEventListener('click', handler);
+      if (onConfirm) onConfirm();
+    };
+    okBtn.addEventListener('click', handler);
+  }
   document.getElementById('noteSaveBtn').addEventListener('click', function(){
     var text = document.getElementById('noteText').value.trim();
     if (!text){ toast('특이사항 내용을 입력해주세요.'); return; }
@@ -1503,9 +1525,15 @@
         var justCompleted = this.checked;
         if (justCompleted) completed[loc.id] = true; else delete completed[loc.id];
         var note = justCompleted ? activeNoteFor(loc.id) : null;
-        if (justCompleted && note) alert('⚠️ ' + loc.name + ' 특이사항\n\n' + note.text);
-        renderRoute();
-        if (justCompleted) promptNextAfterDone();
+        if (justCompleted && note){
+          showNoteWarnPopup(loc.name, note.text, function(){
+            renderRoute();
+            promptNextAfterDone();
+          });
+        } else {
+          renderRoute();
+          if (justCompleted) promptNextAfterDone();
+        }
       });
     });
 
