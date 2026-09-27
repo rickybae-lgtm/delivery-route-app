@@ -120,6 +120,7 @@
   .badge.mix{ background:linear-gradient(90deg, color-mix(in srgb, var(--cold) 28%, transparent), color-mix(in srgb, var(--frozen) 28%, transparent)); color:var(--frozen); }
   .badge.start{ background:color-mix(in srgb, var(--accent) 18%, transparent); color:var(--accent); }
   .badge.warn{ background:color-mix(in srgb, var(--warn) 20%, transparent); color:var(--warn); }
+  .note-flag{ display:block; width:100%; margin:6px 0; padding:8px 12px; border-radius:10px; background:#fff3b0; color:#c81e1e; font-weight:800; font-size:15px; line-height:1.4; border:2px solid #f5c400; box-shadow:0 1px 3px rgba(0,0,0,.15); }
   .move-btns{ display:flex; flex-direction:column; gap:3px; flex:none; }
   .move-btns button{ width:26px; height:24px; padding:0; font-size:12px; line-height:1; border-radius:6px; }
 
@@ -1373,9 +1374,9 @@
           '<span class="badge ' + catClass(loc) + '">' + catLabel(loc) + '</span>' +
           (isNext ? '<span class="badge start">▶ 다음 목적지</span>' : '') +
           (entry.early ? '<span class="badge warn">⏰ ' + Math.round(entry.waitMin) + '분 대기 후 진행 (도착 ' + fmtHHMM(entry.arrivalMin) + ' / 오픈 ' + loc.openTime + ')</span>' : '') +
-          (activeNote ? '<span class="badge warn">📝 ' + escapeHtml(activeNote.text) + '</span>' : '') +
           '<label class="done-check" style="margin-left:auto;"><input type="checkbox" data-done="'+i+'" ' + (isDone?'checked':'') + '> 도착 완료</label>' +
           '</div>' +
+          (activeNote ? '<div class="note-flag">📝 ' + escapeHtml(activeNote.text) + '</div>' : '') +
           (loc.address ? '<div class="stop-addr">' + escapeHtml(loc.address) + '</div>' : '') +
           '<div class="leg-dist">' + distLine + '</div>' +
           (notesHtml ? '<div class="stop-notes">' + notesHtml + '</div>' : '') +
