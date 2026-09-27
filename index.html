@@ -1237,6 +1237,12 @@
 
   // ---------- 특이사항 입력창 ----------
   var noteEditingLocId = null;
+  // 로컬(한국) 달력 날짜 기준으로 'YYYY-MM-DD' 문자열을 만듦.
+  // toISOString()은 UTC로 변환하기 때문에 한국시간 기준으로는 하루가 밀려 보일 수 있어 직접 계산함.
+  function dateToLocalStr(d){
+    var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+    return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+  }
   function openNoteEditor(locId){
     noteEditingLocId = locId;
     var existing = activeNoteFor(locId);
@@ -1244,7 +1250,7 @@
     var expireInput = document.getElementById('noteExpireDate');
     // 유효기간 마지막 날짜(자정 직전)를 달력에 보여줌 — 기본은 오늘.
     var lastValidMs = (existing && existing.expiresAt ? existing.expiresAt : todayMidnightTs()) - 1;
-    expireInput.value = new Date(lastValidMs).toISOString().slice(0, 10);
+    expireInput.value = dateToLocalStr(new Date(lastValidMs));
     document.getElementById('noteDeleteBtn').style.display = existing ? '' : 'none';
     document.getElementById('noteModal').style.display = 'flex';
   }
@@ -1259,7 +1265,7 @@
     var expireInput = document.getElementById('noteExpireDate');
     var base = expireInput.value ? new Date(expireInput.value + 'T00:00:00') : new Date();
     base.setDate(base.getDate() + 1);
-    expireInput.value = base.toISOString().slice(0, 10);
+    expireInput.value = dateToLocalStr(base);
   });
   document.getElementById('noteCancelBtn').addEventListener('click', closeNoteEditor);
   document.getElementById('noteDeleteBtn').addEventListener('click', function(){
@@ -1496,11 +1502,9 @@
         var justCompleted = this.checked;
         if (justCompleted) completed[loc.id] = true; else delete completed[loc.id];
         var note = justCompleted ? activeNoteFor(loc.id) : null;
+        if (justCompleted && note) alert('⚠️ ' + loc.name + ' 특이사항\n\n' + note.text);
         renderRoute();
-        if (justCompleted){
-          if (note) alert('⚠️ ' + loc.name + ' 특이사항\n\n' + note.text);
-          promptNextAfterDone();
-        }
+        if (justCompleted) promptNextAfterDone();
       });
     });
 
