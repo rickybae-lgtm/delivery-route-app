@@ -388,7 +388,7 @@
       <button type="button" class="btn-ghost btn-sm" data-notepreset="서명 필요">서명 필요</button>
     </div>
     <textarea id="noteText" placeholder="특이사항을 입력하세요 (예: 반품수거)" style="min-height:64px;"></textarea>
-    <div class="hint">기본은 오늘 자정에 자동으로 지워져요. 그날 처리를 못 했으면 아래에서 연장하거나 날짜를 직접 정해주세요.</div>
+    <div class="hint">기본은 다음날 아침 10시에 자동으로 지워져요. 그날 처리를 못 했으면 아래에서 연장하거나 날짜를 직접 정해주세요.</div>
     <div class="row2">
       <button type="button" class="btn-ghost btn-sm" id="noteExtendBtn">+1일 연장</button>
       <label class="field"><span class="lbl">유지할 날짜(까지)</span><input type="date" id="noteExpireDate"></label>
@@ -432,9 +432,17 @@
   function saveStoreNotesToStorage(){
     try { localStorage.setItem(NOTES_KEY, JSON.stringify(storeNotes)); } catch(e){}
   }
-  // "오늘 자정"(=내일 0시) 타임스탬프. 기본 유효기간으로 씀.
-  function todayMidnightTs(){ var d = new Date(); d.setHours(24,0,0,0); return d.getTime(); }
-  // 유효기간이 지난 특이사항은 조용히 지움(자정 리셋).
+  // 하루 경계를 자정이 아니라 "아침 10시"로 잡음(근무시간이 22시~7시라 자정에 리셋되면
+  // 한창 일하는 중에 데이터가 지워져버림). 지금이 그 날 10시 이전이면 오늘 10시, 이후면
+  // 내일 10시가 다음 리셋 시점이 됨. 특이사항 기본 유효기간, 배송순서 저장 등에서 같이 씀.
+  var DAILY_RESET_HOUR = 10;
+  function todayMidnightTs(){
+    var d = new Date();
+    d.setHours(DAILY_RESET_HOUR, 0, 0, 0);
+    if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+    return d.getTime();
+  }
+  // 유효기간이 지난 특이사항은 조용히 지움(아침 10시 리셋).
   function pruneExpiredNotes(){
     var now = Date.now(), changed = false;
     Object.keys(storeNotes).forEach(function(id){
@@ -498,9 +506,15 @@
 
   // 계산된 오늘의 방문 순서(state.order)는 기기에 저장해뒀다가, 티맵 켰다 돌아오거나
   // 탭을 오래 안 보고 있다가 브라우저가 페이지를 새로고침해도(=state가 통째로 사라져도)
-  // 오늘 날짜가 같으면 그대로 복원합니다. 날짜가 바뀌면(자정 넘어가면) 무시하고 새로 계산하게 함.
+  // 오늘 날짜가 같으면 그대로 복원합니다. 날짜가 바뀌면(하루 경계인 아침 10시를 넘어가면)
+  // 무시하고 새로 계산하게 함. 근무시간이 밤~새벽이라 자정 기준이면 일하는 도중 지워지므로
+  // 위 todayMidnightTs와 같은 기준(아침 10시)으로 날짜를 계산함.
   var ORDER_KEY = 'deliveryRoute.order.v1';
-  function todayStr(){ return new Date().toDateString(); }
+  function todayStr(){
+    var d = new Date();
+    if (d.getHours() < DAILY_RESET_HOUR) d.setDate(d.getDate() - 1);
+    return d.toDateString();
+  }
   function saveOrder(){
     try {
       if (state.order) localStorage.setItem(ORDER_KEY, JSON.stringify({ date: todayStr(), order: state.order }));
@@ -1305,7 +1319,8 @@
     var expiresAt;
     if (dateVal){
       var d = new Date(dateVal + 'T00:00:00');
-      d.setDate(d.getDate() + 1); // 고른 날짜 하루 전체가 유효하도록, 그다음 날 자정까지
+      d.setDate(d.getDate() + 1);
+      d.setHours(DAILY_RESET_HOUR, 0, 0, 0); // 고른 날짜 하루 전체가 유효하도록, 그다음 날 아침 10시까지
       expiresAt = d.getTime();
     } else {
       expiresAt = todayMidnightTs();
